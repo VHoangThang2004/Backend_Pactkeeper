@@ -23,13 +23,13 @@ public static class SeedData
         await inventory.DeleteManyAsync(_ => true);
         await profiles.DeleteManyAsync(_ => true);
 
-        var admin = new User { Username = "admin", PasswordHash = "admin123", Role = "Admin" };
+        var admin = new User { Username = "admin", PasswordHash = "admin123", Role = "Admin", HasPassword = true };
         await users.InsertOneAsync(admin);
 
-        var player1 = new User { Username = "player1", PasswordHash = "player123", Role = "Player" };
+        var player1 = new User { Username = "player1", PasswordHash = "player123", Role = "Player", HasPassword = true };
         await users.InsertOneAsync(player1);
 
-        var player2 = new User { Username = "player2", PasswordHash = "player123", Role = "Player" };
+        var player2 = new User { Username = "player2", PasswordHash = "player123", Role = "Player", HasPassword = true };
         await users.InsertOneAsync(player2);
 
         await inventory.InsertOneAsync(new InventoryItem

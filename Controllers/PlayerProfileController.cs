@@ -21,9 +21,23 @@ public class PlayerProfileController : ControllerBase
         if (playerId == null) return Unauthorized();
 
         var profile = await _service.GetByFilterAsync(p => p.PlayerId == playerId);
-        return profile != null ? Ok(profile) : NotFound();
-    }
 
+        if (profile == null)
+        {
+            // Auto-create default profile on first fetch
+            profile = new PlayerProfile
+            {
+                PlayerId = playerId,
+                Username = User.Identity?.Name ?? "Player",
+                Level = 1,
+                Experience = 0,
+                LastLogin = DateTime.UtcNow
+            };
+            await _service.CreateAsync(playerId, profile);
+        }
+
+        return Ok(profile);
+    }
     [HttpPut]
     public async Task<ActionResult> UpdateMyProfile([FromBody] PlayerProfile profile)
     {

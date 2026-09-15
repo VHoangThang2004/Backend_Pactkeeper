@@ -6,7 +6,8 @@ public record MatchSessionDto(
     string Player2Id,
     string ServerIp,
     int ServerPort,
-    string Status
+    string Status,
+    string Mode
 );
 
 public record MatchSessionJoinInfoDto(
@@ -19,7 +20,11 @@ public record StartMatchRequestDto(
     string Player1Id,
     string Player2Id
 );
-
+public record MatchInfoDto(
+    string MatchId,
+    string Mode,
+    string StoryChapterId
+);
 public record MatchLoadoutsResponseDto(
     string Player1Id,
     string Player2Id,

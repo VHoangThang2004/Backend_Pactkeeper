@@ -7,4 +7,5 @@ public interface IPlayerProfileService
 {
     Task<PlayerProfile?> GetByFilterAsync(Expression<Func<PlayerProfile, bool>> filter);
     Task UpdateAsync(string id, PlayerProfile profile);
+    Task CreateAsync(string playerId, PlayerProfile profile);
 }

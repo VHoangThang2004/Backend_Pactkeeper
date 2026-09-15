@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDbSettings"));
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
+builder.Services.Configure<ServerConfig>(builder.Configuration.GetSection("ServerConfig"));
 
 builder.Services.AddSingleton<IMongoDatabase>(sp =>
 {
@@ -30,11 +31,16 @@ builder.Services.AddScoped<IMongoRepository<User>>(sp =>
 
 builder.Services.AddScoped<IMongoRepository<TeamLoadoutDocument>>(sp =>
     new MongoRepository<TeamLoadoutDocument>(sp.GetRequiredService<IMongoDatabase>(), "TeamLoadouts"));
-    
+
 builder.Services.AddScoped<IMongoRepository<MatchSession>>(sp =>
 new MongoRepository<MatchSession>(sp.GetRequiredService<IMongoDatabase>(), "MatchSessions"));
 
 builder.Services.AddScoped<IMatchSessionService, MatchSessionService>();
+builder.Services.AddScoped<IMongoRepository<MatchQueueEntry>>(sp =>
+    new MongoRepository<MatchQueueEntry>(sp.GetRequiredService<IMongoDatabase>(), "MatchQueue"));
+
+builder.Services.AddScoped<IMatchQueueService, MatchQueueService>();
+builder.Services.AddHostedService<MatchmakingService>();
 
 builder.Services.AddScoped<ITeamLoadoutService, TeamLoadoutService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();

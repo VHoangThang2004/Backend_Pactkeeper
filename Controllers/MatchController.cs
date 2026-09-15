@@ -3,6 +3,7 @@ using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using GameInventoryApi.Models;
+using Microsoft.Extensions.Options;
 
 namespace GameInventoryApi.Controllers;
 
@@ -13,33 +14,13 @@ public class MatchController : ControllerBase
     private readonly IMatchSessionService _matchService;
     private readonly ITeamLoadoutService _loadoutService;
 
+
     public MatchController(IMatchSessionService matchService, ITeamLoadoutService loadoutService)
     {
         _matchService = matchService;
         _loadoutService = loadoutService;
     }
 
-    // Called by backend/admin to start a match
-    [HttpPost("start")]
-    [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<MatchSessionDto>> StartMatch([FromBody] StartMatchRequestDto dto)
-    {
-        // For now: static server IP and next available port
-        // Later: spawn Unity server process here
-        string serverIp = "127.0.0.1";
-        int port = 7777;
-
-        var match = await _matchService.CreateMatchAsync(dto.Player1Id, dto.Player2Id, serverIp, port);
-
-        return Ok(new MatchSessionDto(
-            match.MatchId,
-            match.Player1Id,
-            match.Player2Id,
-            match.ServerIp,
-            match.ServerPort,
-            match.Status
-        ));
-    }
 
     // Called by client to get their current active match
     [HttpGet("current")]
@@ -78,4 +59,56 @@ public class MatchController : ControllerBase
             u.UId, u.MovementSkillId, u.WeaponSkillId, u.ClassSkillId, u.EquipmentSkillId
         )).ToList()
     );
+
+    [HttpGet("{matchId}/info")]
+    public async Task<ActionResult<MatchInfoDto>> GetMatchInfo(string matchId)
+    {
+        var match = await _matchService.GetByMatchIdAsync(matchId);
+        if (match == null) return NotFound();
+
+        return Ok(new MatchInfoDto(match.MatchId, match.Mode, match.StoryChapterId));
+    }
+
+    [HttpGet("history")]
+    [Authorize(Roles = "Player")]
+    public async Task<ActionResult<List<MatchSessionDto>>> GetMatchHistory()
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var matches = await _matchService.GetAllByPlayerIdAsync(playerId);
+
+        return Ok(matches.Select(m => new MatchSessionDto(
+            m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
+        )).ToList());
+    }
+
+    [HttpPatch("{matchId}/status")]
+    public async Task<ActionResult> UpdateMatchStatus(string matchId, [FromBody] MatchStatusUpdateDto dto)
+    {
+        var match = await _matchService.GetByMatchIdAsync(matchId);
+        if (match == null) return NotFound();
+
+        await _matchService.UpdateStatusAsync(matchId, dto.Status, dto.Result);
+
+        // Kill process if match is done
+        if (dto.Status == "cancelled" || dto.Status == "completed")
+        {
+            if (match.ProcessId > 0)
+            {
+                try
+                {
+                    var process = System.Diagnostics.Process.GetProcessById(match.ProcessId);
+                    process.Kill();
+                    Console.WriteLine($"[Match] Killed process {match.ProcessId} for match {matchId}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Match] Failed to kill process {match.ProcessId}: {ex.Message}");
+                }
+            }
+        }
+
+        return Ok();
+    }
 }

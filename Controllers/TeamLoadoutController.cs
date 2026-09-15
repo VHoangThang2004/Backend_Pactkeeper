@@ -23,7 +23,9 @@ public class TeamLoadoutController : ControllerBase
         if (playerId == null) return Unauthorized();
 
         var loadout = await _service.GetByPlayerIdAsync(playerId);
-        if (loadout == null) return NotFound();
+
+        if (loadout == null)
+            return Ok(new TeamLoadoutDto(playerId, new List<UnitLoadoutEntryDto>()));
 
         return Ok(ToDto(loadout));
     }

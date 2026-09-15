@@ -18,4 +18,7 @@ public class PlayerProfileService : IPlayerProfileService
 
     public Task UpdateAsync(string id, PlayerProfile profile)
         => _repository.UpdateAsync(id, profile);
+
+    public Task CreateAsync(string playerId, PlayerProfile profile)
+=> _repository.CreateAsync(profile);
 }

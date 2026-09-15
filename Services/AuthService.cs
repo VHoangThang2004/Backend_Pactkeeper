@@ -26,7 +26,7 @@ public class AuthService : IAuthService
     {
         var user = await _userRepository.GetByFilterAsync(u => u.Username == loginDto.Username);
 
-        if (user == null || user.PasswordHash != loginDto.Password)
+        if (user == null || !user.HasPassword || user.PasswordHash != loginDto.Password)
             return null;
 
         var token = GenerateJwtToken(user);

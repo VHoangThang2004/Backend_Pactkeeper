@@ -12,7 +12,7 @@ public class User
     public string Username { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string Role { get; set; } = "Player";
-
+    public bool HasPassword { get; set; } = false;
     public LoginProviders LoginProviders { get; set; } = new LoginProviders();
 }
 

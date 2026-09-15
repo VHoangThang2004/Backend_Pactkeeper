@@ -3,3 +3,7 @@ obj/
 *.user
 .vs/
 appsettings.Development.json
+
+mobile/
+website/
+adminDashboard/

@@ -13,14 +13,16 @@ public class MatchController : ControllerBase
 {
     private readonly IMatchSessionService _matchService;
     private readonly ITeamLoadoutService _loadoutService;
+    private readonly IMatchHistoryService _historyService;
+    private readonly IMatchQueueService _queueService;
 
-
-    public MatchController(IMatchSessionService matchService, ITeamLoadoutService loadoutService)
+    public MatchController(IMatchSessionService matchService, ITeamLoadoutService loadoutService, IMatchHistoryService historyService, IMatchQueueService queueService)
     {
         _matchService = matchService;
         _loadoutService = loadoutService;
+        _historyService = historyService;
+        _queueService = queueService;
     }
-
 
     // Called by client to get their current active match
     [HttpGet("current")]
@@ -66,7 +68,7 @@ public class MatchController : ControllerBase
         var match = await _matchService.GetByMatchIdAsync(matchId);
         if (match == null) return NotFound();
 
-        return Ok(new MatchInfoDto(match.MatchId, match.Mode, match.StoryChapterId));
+        return Ok(new MatchInfoDto(match.MatchId, match.Mode, match.MapId));
     }
 
     [HttpGet("history")]
@@ -76,7 +78,7 @@ public class MatchController : ControllerBase
         var playerId = User.FindFirst("PlayerId")?.Value;
         if (playerId == null) return Unauthorized();
 
-        var matches = await _matchService.GetAllByPlayerIdAsync(playerId);
+        var matches = await _historyService.GetByPlayerIdAsync(playerId);
 
         return Ok(matches.Select(m => new MatchSessionDto(
             m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
@@ -91,9 +93,20 @@ public class MatchController : ControllerBase
 
         await _matchService.UpdateStatusAsync(matchId, dto.Status, dto.Result);
 
-        // Kill process if match is done
         if (dto.Status == "cancelled" || dto.Status == "completed")
         {
+            // Archive to history
+            match.Status = dto.Status;
+            match.Result = dto.Result;
+            await _historyService.ArchiveAsync(match);
+
+            // Delete from active matches
+            await _matchService.DeleteAsync(matchId);
+            // Clean up queue entries for both players
+            await _queueService.RemoveByPlayerIdAsync(match.Player1Id);
+            await _queueService.RemoveByPlayerIdAsync(match.Player2Id);
+
+            // Kill process
             if (match.ProcessId > 0)
             {
                 try

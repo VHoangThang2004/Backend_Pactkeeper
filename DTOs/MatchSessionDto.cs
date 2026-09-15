@@ -23,7 +23,7 @@ public record StartMatchRequestDto(
 public record MatchInfoDto(
     string MatchId,
     string Mode,
-    string StoryChapterId
+    string MapId
 );
 public record MatchLoadoutsResponseDto(
     string Player1Id,

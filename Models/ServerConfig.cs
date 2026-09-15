@@ -6,4 +6,5 @@ public class ServerConfig
     public int BasePort { get; set; } = 7777;
     public string BackendPublicUrl { get; set; } = string.Empty;
     public string UnityServerExePath { get; set; } = string.Empty;
+    public string LocalPath { get; set; } = string.Empty;
 }

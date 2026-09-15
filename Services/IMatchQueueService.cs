@@ -9,4 +9,5 @@ public interface IMatchQueueService
     Task LeaveQueueAsync(string playerId);
     Task<List<MatchQueueEntry>> GetWaitingPlayersAsync();
     Task UpdateMatchedAsync(string playerId, string matchId, string serverIp, int serverPort);
+    Task RemoveByPlayerIdAsync(string playerId);
 }

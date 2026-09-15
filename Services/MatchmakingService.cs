@@ -47,7 +47,7 @@ public class MatchmakingService : BackgroundService
         int port = _serverConfig.BasePort;
         var match = await matchService.CreateMatchAsync(
             player1.PlayerId, player2.PlayerId,
-            _serverConfig.ServerIp, port, "pvp");
+            _serverConfig.ServerIp, port, "pvp", "MD_PVP_001");
 
         // Spawn Unity server
         int processId = SpawnUnityServer(match.MatchId, port);
@@ -65,8 +65,8 @@ public class MatchmakingService : BackgroundService
     {
         try
         {
-            string logPath = Path.Combine("C:\\Users\\Admin\\server_logs", $"{matchId}.log");
-            Directory.CreateDirectory("C:\\Users\\Admin\\server_logs");
+            string logPath = Path.Combine(_serverConfig.LocalPath, $"{matchId}.log");
+            Directory.CreateDirectory(_serverConfig.LocalPath);
 
             var startInfo = new System.Diagnostics.ProcessStartInfo
             {

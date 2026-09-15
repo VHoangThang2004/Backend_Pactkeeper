@@ -43,4 +43,11 @@ public class MatchQueueService : IMatchQueueService
         entry.ServerPort = serverPort;
         await _repository.UpdateAsync(entry.Id, entry);
     }
+
+    public async Task RemoveByPlayerIdAsync(string playerId)
+    {
+        var entry = await GetByPlayerIdAsync(playerId);
+        if (entry == null) return;
+        await _repository.DeleteAsync(entry.Id);
+    }
 }

@@ -35,7 +35,9 @@ builder.Services.AddScoped<IMongoRepository<TeamLoadoutDocument>>(sp =>
 builder.Services.AddScoped<IMongoRepository<MatchSession>>(sp =>
 new MongoRepository<MatchSession>(sp.GetRequiredService<IMongoDatabase>(), "MatchSessions"));
 
-builder.Services.AddScoped<IMatchSessionService, MatchSessionService>();
+builder.Services.AddScoped<IMongoRepository<MatchHistory>>(sp =>
+    new MongoRepository<MatchHistory>(sp.GetRequiredService<IMongoDatabase>(), "MatchHistory"));
+
 builder.Services.AddScoped<IMongoRepository<MatchQueueEntry>>(sp =>
     new MongoRepository<MatchQueueEntry>(sp.GetRequiredService<IMongoDatabase>(), "MatchQueue"));
 
@@ -44,6 +46,8 @@ builder.Services.AddHostedService<MatchmakingService>();
 
 builder.Services.AddScoped<ITeamLoadoutService, TeamLoadoutService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<IMatchSessionService, MatchSessionService>();
+builder.Services.AddScoped<IMatchHistoryService, MatchHistoryService>();
 builder.Services.AddScoped<IPlayerProfileService, PlayerProfileService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.Configure<SteamSettings>(builder.Configuration.GetSection("SteamSettings"));

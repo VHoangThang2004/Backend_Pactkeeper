@@ -42,7 +42,8 @@ builder.Services.AddScoped<IMongoRepository<MatchQueueEntry>>(sp =>
     new MongoRepository<MatchQueueEntry>(sp.GetRequiredService<IMongoDatabase>(), "MatchQueue"));
 
 builder.Services.AddScoped<IMatchQueueService, MatchQueueService>();
-builder.Services.AddHostedService<MatchmakingService>();
+builder.Services.AddSingleton<MatchmakingService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MatchmakingService>());
 
 builder.Services.AddScoped<ITeamLoadoutService, TeamLoadoutService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
@@ -52,8 +53,6 @@ builder.Services.AddScoped<IPlayerProfileService, PlayerProfileService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.Configure<SteamSettings>(builder.Configuration.GetSection("SteamSettings"));
 builder.Services.AddHttpClient<ISteamAuthService, SteamAuthService>();
-builder.Services.AddSingleton<RudpServerService>();
-
 
 var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -102,12 +101,8 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
+app.UseSwagger();
+app.UseSwaggerUI();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -119,20 +114,9 @@ using (var scope = app.Services.CreateScope())
     await SeedData.InitializeAsync(database);
 }
 
-var rudpService = app.Services.GetRequiredService<RudpServerService>();
-rudpService.Start();
 
 Console.WriteLine("=== FULL GAME SERVER IS RUNNING ===");
 Console.WriteLine("REST API     → http://localhost:5276/swagger");
-Console.WriteLine("RUDP Real-time → port 7777");
 
-_ = Task.Run(async () =>
-{
-    while (true)
-    {
-        rudpService.PollEvents();
-        await Task.Delay(15);
-    }
-});
 
 app.Run();

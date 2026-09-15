@@ -15,13 +15,15 @@ public class MatchController : ControllerBase
     private readonly ITeamLoadoutService _loadoutService;
     private readonly IMatchHistoryService _historyService;
     private readonly IMatchQueueService _queueService;
+    private readonly MatchmakingService _matchmakingService;
 
-    public MatchController(IMatchSessionService matchService, ITeamLoadoutService loadoutService, IMatchHistoryService historyService, IMatchQueueService queueService)
+    public MatchController(IMatchSessionService matchService, ITeamLoadoutService loadoutService, IMatchHistoryService historyService, IMatchQueueService queueService, MatchmakingService matchmakingService)
     {
         _matchService = matchService;
         _loadoutService = loadoutService;
         _historyService = historyService;
         _queueService = queueService;
+        _matchmakingService = matchmakingService;
     }
 
     // Called by client to get their current active match
@@ -113,6 +115,8 @@ public class MatchController : ControllerBase
                 {
                     var process = System.Diagnostics.Process.GetProcessById(match.ProcessId);
                     process.Kill();
+                    // inject MatchmakingService and call:
+                    _matchmakingService.ReleasePort(match.ServerPort);
                     Console.WriteLine($"[Match] Killed process {match.ProcessId} for match {matchId}");
                 }
                 catch (Exception ex)

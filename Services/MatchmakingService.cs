@@ -8,6 +8,26 @@ public class MatchmakingService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ServerConfig _serverConfig;
 
+    private HashSet<int> _activePorts = new HashSet<int>();
+
+    private int GetNextAvailablePort()
+    {
+        foreach (var port in _serverConfig.GamePorts)
+        {
+            if (!_activePorts.Contains(port))
+            {
+                _activePorts.Add(port);
+                return port;
+            }
+        }
+        return -1;
+    }
+    public void ReleasePort(int port)
+    {
+        _activePorts.Remove(port);
+        Console.WriteLine($"[Matchmaking] Released port {port}");
+    }
+
     public MatchmakingService(IServiceScopeFactory scopeFactory, IOptions<ServerConfig> serverConfig)
     {
         _scopeFactory = scopeFactory;
@@ -44,7 +64,12 @@ public class MatchmakingService : BackgroundService
         Console.WriteLine($"[Matchmaking] Pairing {player1.PlayerId} vs {player2.PlayerId}");
 
         // Create match
-        int port = _serverConfig.BasePort;
+        int port = GetNextAvailablePort();
+        if (port == -1)
+        {
+            Console.WriteLine("[Matchmaking] No available ports — cannot start match.");
+            return;
+        }
         var match = await matchService.CreateMatchAsync(
             player1.PlayerId, player2.PlayerId,
             _serverConfig.ServerIp, port, "pvp", "MD_PVP_001");

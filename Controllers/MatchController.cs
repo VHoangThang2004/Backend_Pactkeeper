@@ -73,6 +73,25 @@ public class MatchController : ControllerBase
         return Ok(new MatchInfoDto(match.MatchId, match.Mode, match.MapId));
     }
 
+    [HttpGet("history/{matchId}")]
+    [Authorize(Roles = "Player")]
+    public async Task<ActionResult<MatchHistoryDto>> GetMatchHistoryById(string matchId)
+    {
+        var history = await _historyService.GetByMatchIdAsync(matchId);
+        if (history == null) return NotFound();
+
+        return Ok(new MatchHistoryDto(
+            history.MatchId,
+            history.Player1Id,
+            history.Player2Id,
+            history.Status,
+            history.Result != null
+                ? new MatchResultDataDto(history.Result.WinnerId, history.Result.DurationSeconds, history.Result.TotalInstants)
+                : null,
+            history.CompletedAt
+        ));
+    }
+
     [HttpGet("history")]
     [Authorize(Roles = "Player")]
     public async Task<ActionResult<List<MatchSessionDto>>> GetMatchHistory()

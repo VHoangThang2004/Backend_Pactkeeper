@@ -34,7 +34,8 @@ public class AuthService : IAuthService
         return new AuthResponseDto(
             Token: token,
             Role: user.Role,
-            Username: user.Username
+            Username: user.Username,
+            PlayerId: user.Id
         );
     }
 

@@ -31,3 +31,18 @@ public record MatchLoadoutsResponseDto(
     TeamLoadoutDto? Player1Loadout,
     TeamLoadoutDto? Player2Loadout
 );
+
+public record MatchResultDataDto(
+    string WinnerId,
+    int DurationSeconds,
+    int TotalInstants
+);
+
+public record MatchHistoryDto(
+    string MatchId,
+    string Player1Id,
+    string Player2Id,
+    string Status,
+    MatchResultDataDto? Result,
+    DateTime CompletedAt
+);

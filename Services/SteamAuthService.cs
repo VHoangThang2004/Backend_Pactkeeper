@@ -57,7 +57,7 @@ public class SteamAuthService : ISteamAuthService
 
         // Step 3 — Issue JWT
         var token = GenerateJwtToken(user);
-        return new AuthResponseDto(Token: token, Role: user.Role, Username: user.Username);
+        return new AuthResponseDto(Token: token, Role: user.Role, Username: user.Username, PlayerId: user.Id);
     }
 
     private async Task<string> VerifySteamTicketAsync(string ticket)

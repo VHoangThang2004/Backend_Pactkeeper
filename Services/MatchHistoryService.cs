@@ -31,4 +31,7 @@ public class MatchHistoryService : IMatchHistoryService
     public Task<List<MatchHistory>> GetByPlayerIdAsync(string playerId)
         => _repository.GetAllByFilterAsync(h =>
             h.Player1Id == playerId || h.Player2Id == playerId);
+
+    public Task<MatchHistory?> GetByMatchIdAsync(string matchId)
+        => _repository.GetByFilterAsync(h => h.MatchId == matchId);
 }

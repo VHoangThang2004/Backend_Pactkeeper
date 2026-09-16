@@ -1,3 +1,3 @@
 namespace GameInventoryApi.DTOs;
 
-public record AuthResponseDto(string Token, string Role, string Username);
+public record AuthResponseDto(string Token, string Role, string Username, string PlayerId);

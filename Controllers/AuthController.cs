@@ -18,12 +18,12 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginDto loginDto)
+    public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginDto dto)
     {
-        var response = await _authService.LoginAsync(loginDto);
+        var response = await _authService.LoginAsync(dto);
         return response != null ? Ok(response) : Unauthorized();
     }
-    
+
     [HttpPost("steam")]
     public async Task<ActionResult<AuthResponseDto>> SteamLogin([FromBody] SteamLoginDto dto)
     {

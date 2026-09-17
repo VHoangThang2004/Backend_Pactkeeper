@@ -4,5 +4,5 @@ namespace GameInventoryApi.Services;
 
 public interface IAuthService
 {
-    Task<AuthResponseDto?> LoginAsync(LoginDto loginDto);
+    Task<AuthResponseDto?> LoginAsync(LoginDto dto);
 }

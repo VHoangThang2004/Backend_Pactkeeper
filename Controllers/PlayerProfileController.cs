@@ -1,3 +1,4 @@
+using GameInventoryApi.DTOs;
 using GameInventoryApi.Models;
 using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -24,7 +25,6 @@ public class PlayerProfileController : ControllerBase
 
         if (profile == null)
         {
-            // Auto-create default profile on first fetch
             profile = new PlayerProfile
             {
                 PlayerId = playerId,
@@ -38,13 +38,59 @@ public class PlayerProfileController : ControllerBase
 
         return Ok(profile);
     }
-    [HttpPut]
-    public async Task<ActionResult> UpdateMyProfile([FromBody] PlayerProfile profile)
+
+    // GET /api/playerprofile/units
+    [HttpGet("units")]
+    public async Task<ActionResult<List<UnitConfigDto>>> GetMyUnits()
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
-        if (playerId == null || profile.PlayerId != playerId) return Forbid();
+        if (playerId == null) return Unauthorized();
 
-        await _service.UpdateAsync(profile.Id, profile);
-        return NoContent();
+        var units = await _service.GetAllUnitConfigsAsync(playerId);
+        return Ok(units);
+    }
+
+    // PATCH /api/playerprofile/unit/{ownedUnitId}/movement-skill
+    [HttpPatch("unit/{ownedUnitId}/movement-skill")]
+    public async Task<ActionResult> UpdateMovementSkill(string ownedUnitId, [FromBody] UpdateSkillDto dto)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var (success, error) = await _service.UpdateUnitMovementSkillAsync(playerId, ownedUnitId, dto.SkillId);
+        return success ? NoContent() : BadRequest(error);
+    }
+
+    // PATCH /api/playerprofile/unit/{ownedUnitId}/class-skill
+    [HttpPatch("unit/{ownedUnitId}/class-skill")]
+    public async Task<ActionResult> UpdateClassSkill(string ownedUnitId, [FromBody] UpdateSkillDto dto)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var (success, error) = await _service.UpdateUnitClassSkillAsync(playerId, ownedUnitId, dto.SkillId);
+        return success ? NoContent() : BadRequest(error);
+    }
+
+    // PATCH /api/playerprofile/unit/{ownedUnitId}/weapon
+    [HttpPatch("unit/{ownedUnitId}/weapon")]
+    public async Task<ActionResult> UpdateWeapon(string ownedUnitId, [FromBody] UpdateUnitWeaponDto dto)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var (success, error) = await _service.UpdateUnitWeaponAsync(playerId, ownedUnitId, dto.OwnedWeaponId);
+        return success ? NoContent() : BadRequest(error);
+    }
+
+    // POST /api/playerprofile/weapons/by-class
+    [HttpPost("weapons/by-class")]
+    public async Task<ActionResult<List<OwnedWeaponResultDto>>> GetWeaponsByClass([FromBody] ClassIdFilterDto dto)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var result = await _service.GetOwnedWeaponsByClassIdsAsync(playerId, dto.ClassIds);
+        return Ok(result);
     }
 }

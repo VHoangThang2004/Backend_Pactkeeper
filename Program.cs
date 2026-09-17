@@ -5,6 +5,7 @@ using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using System.Text;
 
@@ -16,12 +17,10 @@ builder.Services.Configure<ServerConfig>(builder.Configuration.GetSection("Serve
 
 builder.Services.AddSingleton<IMongoDatabase>(sp =>
 {
-    var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MongoDbSettings>>().Value;
+    var settings = sp.GetRequiredService<IOptions<MongoDbSettings>>().Value;
     var client = new MongoClient(settings.ConnectionString);
     return client.GetDatabase(settings.DatabaseName);
 });
-builder.Services.AddScoped<IMongoRepository<InventoryItem>>(sp =>
-    new MongoRepository<InventoryItem>(sp.GetRequiredService<IMongoDatabase>(), "InventoryItems"));
 
 builder.Services.AddScoped<IMongoRepository<PlayerProfile>>(sp =>
     new MongoRepository<PlayerProfile>(sp.GetRequiredService<IMongoDatabase>(), "PlayerProfiles"));
@@ -41,12 +40,33 @@ builder.Services.AddScoped<IMongoRepository<MatchHistory>>(sp =>
 builder.Services.AddScoped<IMongoRepository<MatchQueueEntry>>(sp =>
     new MongoRepository<MatchQueueEntry>(sp.GetRequiredService<IMongoDatabase>(), "MatchQueue"));
 
+builder.Services.AddScoped<IMongoRepository<UnitDefinition>>(sp =>
+    new MongoRepository<UnitDefinition>(sp.GetRequiredService<IMongoDatabase>(), "UnitDefinitions"));
+
+builder.Services.AddScoped<IMongoRepository<SkillDefinition>>(sp =>
+    new MongoRepository<SkillDefinition>(sp.GetRequiredService<IMongoDatabase>(), "SkillDefinitions"));
+
+builder.Services.AddScoped<IMongoRepository<ClassDefinition>>(sp =>
+    new MongoRepository<ClassDefinition>(sp.GetRequiredService<IMongoDatabase>(), "ClassDefinitions"));
+
+builder.Services.AddScoped<IMongoRepository<WeaponDefinition>>(sp =>
+    new MongoRepository<WeaponDefinition>(sp.GetRequiredService<IMongoDatabase>(), "WeaponDefinitions"));
+
+builder.Services.AddScoped<IMongoRepository<TrinketDefinition>>(sp =>
+    new MongoRepository<TrinketDefinition>(sp.GetRequiredService<IMongoDatabase>(), "TrinketDefinitions"));
+
+builder.Services.AddScoped<IUnitDefinitionService, UnitDefinitionService>();
+builder.Services.AddScoped<ISkillDefinitionService, SkillDefinitionService>();
+builder.Services.AddScoped<IClassDefinitionService, ClassDefinitionService>();
+builder.Services.AddScoped<IWeaponDefinitionService, WeaponDefinitionService>();
+builder.Services.AddScoped<ITrinketDefinitionService, TrinketDefinitionService>();
+
 builder.Services.AddScoped<IMatchQueueService, MatchQueueService>();
 builder.Services.AddSingleton<MatchmakingService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MatchmakingService>());
 
 builder.Services.AddScoped<ITeamLoadoutService, TeamLoadoutService>();
-builder.Services.AddScoped<IInventoryService, InventoryService>();
+
 builder.Services.AddScoped<IMatchSessionService, MatchSessionService>();
 builder.Services.AddScoped<IMatchHistoryService, MatchHistoryService>();
 builder.Services.AddScoped<IPlayerProfileService, PlayerProfileService>();

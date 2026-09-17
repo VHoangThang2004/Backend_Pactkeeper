@@ -9,28 +9,21 @@ using System.Text;
 
 namespace GameInventoryApi.Services;
 
-public class SteamAuthService : ISteamAuthService
+public class SteamAuthService(
+    IMongoRepository<User> userRepository,
+    IPlayerProfileService profileService,
+    IOptions<JwtSettings> jwtSettings,
+    IOptions<SteamSettings> steamSettings,
+    HttpClient httpClient) : ISteamAuthService
 {
-    private readonly IMongoRepository<User> _userRepository;
-    private readonly JwtSettings _jwtSettings;
-    private readonly SteamSettings _steamSettings;
-    private readonly HttpClient _httpClient;
-
-    public SteamAuthService(
-        IMongoRepository<User> userRepository,
-        IOptions<JwtSettings> jwtSettings,
-        IOptions<SteamSettings> steamSettings,
-        HttpClient httpClient)
-    {
-        _userRepository = userRepository;
-        _jwtSettings = jwtSettings.Value;
-        _steamSettings = steamSettings.Value;
-        _httpClient = httpClient;
-    }
+    private readonly IMongoRepository<User> _userRepository = userRepository;
+    private readonly IPlayerProfileService _profileService = profileService;
+    private readonly JwtSettings _jwtSettings = jwtSettings.Value;
+    private readonly SteamSettings _steamSettings = steamSettings.Value;
+    private readonly HttpClient _httpClient = httpClient;
 
     public async Task<AuthResponseDto?> LoginWithSteamAsync(SteamLoginDto dto)
     {
-        // Step 1 — Verify ticket with Steam
         string steamId = await VerifySteamTicketAsync(dto.SteamTicket);
         if (string.IsNullOrEmpty(steamId))
         {
@@ -40,7 +33,6 @@ public class SteamAuthService : ISteamAuthService
 
         Console.WriteLine($"[SteamAuth] Verified SteamId: {steamId}");
 
-        // Step 2 — Find or create user
         var user = await _userRepository.GetByFilterAsync(u => u.LoginProviders.SteamId == steamId);
 
         if (user == null)
@@ -52,12 +44,11 @@ public class SteamAuthService : ISteamAuthService
                 LoginProviders = new LoginProviders { SteamId = steamId }
             };
             await _userRepository.CreateAsync(user);
+            await _profileService.CreateInitialProfileAsync(user.Id, user.Username);
             Console.WriteLine($"[SteamAuth] Created new user for SteamId {steamId}");
         }
 
-        // Step 3 — Issue JWT
-        var token = GenerateJwtToken(user);
-        return new AuthResponseDto(Token: token, Role: user.Role, Username: user.Username, PlayerId: user.Id);
+        return new AuthResponseDto(GenerateJwtToken(user), user.Role, user.Username, user.Id);
     }
 
     private async Task<string> VerifySteamTicketAsync(string ticket)
@@ -73,7 +64,6 @@ public class SteamAuthService : ISteamAuthService
         string json = await response.Content.ReadAsStringAsync();
         Console.WriteLine($"[SteamAuth] Steam response: {json}");
 
-        // Parse steamid from response
         using var doc = System.Text.Json.JsonDocument.Parse(json);
         var root = doc.RootElement;
 

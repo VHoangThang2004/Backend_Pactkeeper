@@ -1,5 +1,4 @@
 using GameInventoryApi.DTOs;
-using GameInventoryApi.Models;
 using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,52 +10,40 @@ namespace GameInventoryApi.Controllers;
 [Authorize(Roles = "Player")]
 public class TeamLoadoutController : ControllerBase
 {
-    private readonly ITeamLoadoutService _service;
+    private readonly ITeamLoadoutService _loadoutService;
+    private readonly IPlayerProfileService _profileService;
 
-    public TeamLoadoutController(ITeamLoadoutService service)
-        => _service = service;
+    public TeamLoadoutController(ITeamLoadoutService loadoutService, IPlayerProfileService profileService)
+    {
+        _loadoutService = loadoutService;
+        _profileService = profileService;
+    }
 
     [HttpGet]
-    public async Task<ActionResult<TeamLoadoutDto>> GetMyLoadout()
+    public async Task<ActionResult<List<int>>> GetMyLoadout()
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
         if (playerId == null) return Unauthorized();
 
-        var loadout = await _service.GetByPlayerIdAsync(playerId);
-
-        if (loadout == null)
-            return Ok(new TeamLoadoutDto(playerId, new List<UnitLoadoutEntryDto>()));
-
-        return Ok(ToDto(loadout));
+        var loadout = await _loadoutService.GetByPlayerIdAsync(playerId);
+        return Ok(loadout?.UIds ?? []);
     }
 
-    [HttpPost]
-    public async Task<ActionResult> SaveMyLoadout([FromBody] TeamLoadoutDto dto)
+    [HttpPut]
+    public async Task<ActionResult> SaveMyLoadout([FromBody] SaveLoadoutDto dto)
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
         if (playerId == null) return Unauthorized();
 
-        var document = new TeamLoadoutDocument
-        {
-            PlayerId = playerId,
-            Units = dto.Units.Select(u => new UnitLoadoutEntry
-            {
-                UId = u.UId,
-                MovementSkillId = u.MovementSkillId,
-                WeaponSkillId = u.WeaponSkillId,
-                ClassSkillId = u.ClassSkillId,
-                EquipmentSkillId = u.EquipmentSkillId
-            }).ToList()
-        };
+        var profile = await _profileService.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return NotFound("Profile not found.");
 
-        await _service.SaveAsync(playerId, document);
-        return Ok();
+        var ownedUIds = profile.OwnedUnits.Select(u => u.UnitDefinitionUId).ToHashSet();
+        var invalid = dto.UIds.Where(id => !ownedUIds.Contains(id)).ToList();
+        if (invalid.Count > 0)
+            return BadRequest($"Units not owned: {string.Join(", ", invalid)}");
+
+        await _loadoutService.SaveAsync(playerId, dto.UIds);
+        return NoContent();
     }
-
-    private TeamLoadoutDto ToDto(TeamLoadoutDocument doc) => new TeamLoadoutDto(
-        PlayerId: doc.PlayerId,
-        Units: doc.Units.Select(u => new UnitLoadoutEntryDto(
-            u.UId, u.MovementSkillId, u.WeaponSkillId, u.ClassSkillId, u.EquipmentSkillId
-        )).ToList()
-    );
 }

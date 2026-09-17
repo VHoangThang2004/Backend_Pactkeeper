@@ -7,29 +7,28 @@ public class TeamLoadoutService : ITeamLoadoutService
 {
     private readonly IMongoRepository<TeamLoadoutDocument> _repository;
 
-    public TeamLoadoutService(IMongoRepository<TeamLoadoutDocument> repository)
-    {
-        _repository = repository;
-    }
+    public TeamLoadoutService(IMongoRepository<TeamLoadoutDocument> repository) => _repository = repository;
 
     public Task<TeamLoadoutDocument?> GetByPlayerIdAsync(string playerId)
         => _repository.GetByFilterAsync(l => l.PlayerId == playerId);
 
-    public async Task SaveAsync(string playerId, TeamLoadoutDocument loadout)
+    public async Task SaveAsync(string playerId, List<int> uIds)
     {
         var existing = await _repository.GetByFilterAsync(l => l.PlayerId == playerId);
         if (existing == null)
         {
-            loadout.PlayerId = playerId;
-            loadout.LastUpdated = DateTime.UtcNow;
-            await _repository.CreateAsync(loadout);
+            await _repository.CreateAsync(new TeamLoadoutDocument
+            {
+                PlayerId = playerId,
+                UIds = uIds,
+                LastUpdated = DateTime.UtcNow
+            });
         }
         else
         {
-            loadout.Id = existing.Id;
-            loadout.PlayerId = playerId;
-            loadout.LastUpdated = DateTime.UtcNow;
-            await _repository.UpdateAsync(existing.Id, loadout);
+            existing.UIds = uIds;
+            existing.LastUpdated = DateTime.UtcNow;
+            await _repository.UpdateAsync(existing.Id, existing);
         }
     }
 }

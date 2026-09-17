@@ -22,21 +22,13 @@ public class AuthService : IAuthService
         _jwtSettings = jwtSettings.Value;
     }
 
-    public async Task<AuthResponseDto?> LoginAsync(LoginDto loginDto)
+    public async Task<AuthResponseDto?> LoginAsync(LoginDto dto)
     {
-        var user = await _userRepository.GetByFilterAsync(u => u.Username == loginDto.Username);
-
-        if (user == null || !user.HasPassword || user.PasswordHash != loginDto.Password)
+        var user = await _userRepository.GetByFilterAsync(u => u.Username == dto.Username);
+        if (user == null || !user.HasPassword || user.PasswordHash != dto.Password)
             return null;
 
-        var token = GenerateJwtToken(user);
-
-        return new AuthResponseDto(
-            Token: token,
-            Role: user.Role,
-            Username: user.Username,
-            PlayerId: user.Id
-        );
+        return new AuthResponseDto(GenerateJwtToken(user), user.Role, user.Username, user.Id);
     }
 
     private string GenerateJwtToken(User user)

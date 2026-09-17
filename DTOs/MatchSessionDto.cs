@@ -25,12 +25,6 @@ public record MatchInfoDto(
     string Mode,
     string MapId
 );
-public record MatchLoadoutsResponseDto(
-    string Player1Id,
-    string Player2Id,
-    TeamLoadoutDto? Player1Loadout,
-    TeamLoadoutDto? Player2Loadout
-);
 
 public record MatchResultDataDto(
     string WinnerId,

@@ -23,6 +23,6 @@ public class UnitGradeStats
     public int MaxHP { get; set; }
     public int Speed { get; set; }
     public int MaxSkillPoint { get; set; }
-    public float DamageMultiplier { get; set; } = 1f;
-    public float DamageReduction { get; set; } = 1f;
+    public int DamageMultiplier { get; set; } = 100;
+    public int DamageReduction { get; set; } = 0;
 }

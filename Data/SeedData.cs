@@ -24,6 +24,7 @@ public static class SeedData
         await SeedClassesAsync(database);
         await SeedUnitsAsync(database);
         await SeedWeaponsAsync(database);
+        await SeedTrinketsAsync(database);
 
         Console.WriteLine("[Seed] Library seeded.");
     }
@@ -64,7 +65,10 @@ public static class SeedData
             .Find(u => u.GivenAtRegister).ToListAsync();
 
         var weaponDefs = await database.GetCollection<WeaponDefinition>("WeaponDefinitions")
-            .Find(w => w.GivenAtRegister).ToListAsync();
+            .Find(w => true).ToListAsync();
+
+        var trinketDefs = await database.GetCollection<TrinketDefinition>("TrinketDefinitions")
+            .Find(t => true).ToListAsync();
 
         var profile = new PlayerProfile
         {
@@ -74,8 +78,8 @@ public static class SeedData
             {
                 OwnedUnitId = Guid.NewGuid().ToString(),
                 UnitDefinitionUId = u.UId,
-                Grade = 1,
-                UnlockedClassIds = [..u.ClassIds],
+                Grade = 2, // test players get grade 2
+                UnlockedClassIds = [.. u.ClassIds],
                 EquippedMovementSkillId = -1,
                 EquippedOwnedWeaponId = string.Empty,
                 EquippedOwnedTrinketId = string.Empty,
@@ -85,6 +89,11 @@ public static class SeedData
             {
                 OwnedWeaponId = Guid.NewGuid().ToString(),
                 WeaponDefinitionId = w.WeaponId,
+            }).ToList(),
+            OwnedTrinkets = trinketDefs.Select(t => new OwnedTrinket
+            {
+                OwnedTrinketId = Guid.NewGuid().ToString(),
+                TrinketDefinitionId = t.TrinketId,
             }).ToList(),
         };
 
@@ -125,8 +134,8 @@ public static class SeedData
                 UId = 1, UnitName = "Assassin", PassiveSkillId = 5001, ClassIds = [1], GivenAtRegister = true,
                 StatsByGrade =
                 [
-                    new() { Grade = 1, MaxHP = 1, MaxSkillPoint = 1, Speed = 140, DamageMultiplier = 1f, DamageReduction = 1f },
-                    new() { Grade = 2, MaxHP = 3, MaxSkillPoint = 4, Speed = 150, DamageMultiplier = 1f, DamageReduction = 1f },
+                    new() { Grade = 1, MaxHP = 1, MaxSkillPoint = 1, Speed = 140, DamageMultiplier = 100, DamageReduction = 0 },
+                    new() { Grade = 2, MaxHP = 3, MaxSkillPoint = 4, Speed = 150, DamageMultiplier = 100, DamageReduction = 0 },
                 ]
             },
             new UnitDefinition
@@ -134,8 +143,8 @@ public static class SeedData
                 UId = 2, UnitName = "Tank", PassiveSkillId = 5002, ClassIds = [2], GivenAtRegister = true,
                 StatsByGrade =
                 [
-                    new() { Grade = 1, MaxHP = 2, MaxSkillPoint = 1, Speed = 100, DamageMultiplier = 1f, DamageReduction = 1f },
-                    new() { Grade = 2, MaxHP = 5, MaxSkillPoint = 3, Speed = 110, DamageMultiplier = 1f, DamageReduction = 1f },
+                    new() { Grade = 1, MaxHP = 2, MaxSkillPoint = 1, Speed = 100, DamageMultiplier = 100, DamageReduction = 0 },
+                    new() { Grade = 2, MaxHP = 5, MaxSkillPoint = 3, Speed = 110, DamageMultiplier = 100, DamageReduction = 0 },
                 ]
             },
             new UnitDefinition
@@ -143,8 +152,8 @@ public static class SeedData
                 UId = 3, UnitName = "Warrior", PassiveSkillId = 5003, ClassIds = [3], GivenAtRegister = true,
                 StatsByGrade =
                 [
-                    new() { Grade = 1, MaxHP = 2, MaxSkillPoint = 1, Speed = 110, DamageMultiplier = 1f, DamageReduction = 1f },
-                    new() { Grade = 2, MaxHP = 4, MaxSkillPoint = 3, Speed = 120, DamageMultiplier = 1f, DamageReduction = 1f },
+                    new() { Grade = 1, MaxHP = 2, MaxSkillPoint = 1, Speed = 110, DamageMultiplier = 100, DamageReduction = 0 },
+                    new() { Grade = 2, MaxHP = 4, MaxSkillPoint = 3, Speed = 120, DamageMultiplier = 100, DamageReduction = 0 },
                 ]
             },
             new UnitDefinition
@@ -152,8 +161,8 @@ public static class SeedData
                 UId = 4, UnitName = "Archer", PassiveSkillId = 5004, ClassIds = [4], GivenAtRegister = true,
                 StatsByGrade =
                 [
-                    new() { Grade = 1, MaxHP = 1, MaxSkillPoint = 2, Speed = 120, DamageMultiplier = 1f, DamageReduction = 1f },
-                    new() { Grade = 2, MaxHP = 3, MaxSkillPoint = 4, Speed = 130, DamageMultiplier = 1f, DamageReduction = 1f },
+                    new() { Grade = 1, MaxHP = 1, MaxSkillPoint = 2, Speed = 120, DamageMultiplier = 100, DamageReduction = 0 },
+                    new() { Grade = 2, MaxHP = 3, MaxSkillPoint = 4, Speed = 130, DamageMultiplier = 100, DamageReduction = 0 },
                 ]
             },
             new UnitDefinition
@@ -161,8 +170,8 @@ public static class SeedData
                 UId = 5, UnitName = "Physician", PassiveSkillId = 5005, ClassIds = [5], GivenAtRegister = true,
                 StatsByGrade =
                 [
-                    new() { Grade = 1, MaxHP = 1, MaxSkillPoint = 2, Speed = 110, DamageMultiplier = 1f, DamageReduction = 1f },
-                    new() { Grade = 2, MaxHP = 3, MaxSkillPoint = 5, Speed = 120, DamageMultiplier = 1f, DamageReduction = 1f },
+                    new() { Grade = 1, MaxHP = 1, MaxSkillPoint = 2, Speed = 110, DamageMultiplier = 100, DamageReduction = 0 },
+                    new() { Grade = 2, MaxHP = 3, MaxSkillPoint = 5, Speed = 120, DamageMultiplier = 100, DamageReduction = 0 },
                 ]
             },
         });
@@ -179,5 +188,17 @@ public static class SeedData
             new WeaponDefinition { WeaponId = 4, Name = "CrossBow",       ClassId = 4, SkillId = 2004, StatModifiers = new(), GivenAtRegister = true },
             new WeaponDefinition { WeaponId = 5, Name = "Holy Book",      ClassId = 5, SkillId = 2005, StatModifiers = new(), GivenAtRegister = true },
         });
+    }
+    private static async Task SeedTrinketsAsync(IMongoDatabase database)
+    {
+        var trinkets = database.GetCollection<TrinketDefinition>("TrinketDefinitions");
+        await trinkets.InsertManyAsync(new[]
+        {
+        new TrinketDefinition { TrinketId = 1, Name = "Shadow Veil",    SkillId = 4001, StatModifiers = new(), GivenAtRegister = false },
+        new TrinketDefinition { TrinketId = 2, Name = "Iron Wall",      SkillId = 4002, StatModifiers = new(), GivenAtRegister = false },
+        new TrinketDefinition { TrinketId = 3, Name = "Battle Cry",     SkillId = 4003, StatModifiers = new(), GivenAtRegister = false },
+        new TrinketDefinition { TrinketId = 4, Name = "Eagle Eye",      SkillId = 4004, StatModifiers = new(), GivenAtRegister = false },
+        new TrinketDefinition { TrinketId = 5, Name = "Healing Charm",  SkillId = 2005, StatModifiers = new(), GivenAtRegister = true }, //test purpose only, remove later
+    });
     }
 }

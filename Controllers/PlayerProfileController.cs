@@ -50,6 +50,40 @@ public class PlayerProfileController : ControllerBase
         return Ok(units);
     }
 
+    // GET /api/playerprofile/unit/{ownedUnitId}
+    [HttpGet("unit/{ownedUnitId}")]
+    public async Task<ActionResult<UnitConfigDto>> GetMyUnit(string ownedUnitId)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var unit = await _service.GetUnitConfigAsync(playerId, ownedUnitId);
+        if (unit == null) return NotFound();
+        return Ok(unit);
+    }
+
+    // GET /api/playerprofile/weapons
+    [HttpGet("weapons")]
+    public async Task<ActionResult<List<OwnedWeaponResultDto>>> GetMyWeapons()
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var result = await _service.GetAllOwnedWeaponsAsync(playerId);
+        return Ok(result);
+    }
+
+    // GET /api/playerprofile/trinkets
+    [HttpGet("trinkets")]
+    public async Task<ActionResult<List<OwnedTrinketResultDto>>> GetMyTrinkets()
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var result = await _service.GetAllOwnedTrinketsAsync(playerId);
+        return Ok(result);
+    }
+
     // PATCH /api/playerprofile/unit/{ownedUnitId}/movement-skill
     [HttpPatch("unit/{ownedUnitId}/movement-skill")]
     public async Task<ActionResult> UpdateMovementSkill(string ownedUnitId, [FromBody] UpdateSkillDto dto)
@@ -80,6 +114,17 @@ public class PlayerProfileController : ControllerBase
         if (playerId == null) return Unauthorized();
 
         var (success, error) = await _service.UpdateUnitWeaponAsync(playerId, ownedUnitId, dto.OwnedWeaponId);
+        return success ? NoContent() : BadRequest(error);
+    }
+
+    // PATCH /api/playerprofile/unit/{ownedUnitId}/trinket
+    [HttpPatch("unit/{ownedUnitId}/trinket")]
+    public async Task<ActionResult> UpdateTrinket(string ownedUnitId, [FromBody] UpdateUnitTrinketDto dto)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var (success, error) = await _service.UpdateUnitTrinketAsync(playerId, ownedUnitId, dto.OwnedTrinketId);
         return success ? NoContent() : BadRequest(error);
     }
 

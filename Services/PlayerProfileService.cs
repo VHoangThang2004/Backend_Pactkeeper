@@ -40,6 +40,7 @@ public class PlayerProfileService : IPlayerProfileService
     {
         var starterUnits = await _unitRepository.GetAllByFilterAsync(u => u.GivenAtRegister);
         var starterWeapons = await _weaponRepository.GetAllByFilterAsync(w => w.GivenAtRegister);
+        var starterTrinkets = await _trinketRepository.GetAllByFilterAsync(t => t.GivenAtRegister);
 
         var profile = new PlayerProfile
         {
@@ -61,11 +62,15 @@ public class PlayerProfileService : IPlayerProfileService
                 OwnedWeaponId = Guid.NewGuid().ToString(),
                 WeaponDefinitionId = w.WeaponId,
             }).ToList(),
+            OwnedTrinkets = starterTrinkets.Select(t => new OwnedTrinket
+            {
+                OwnedTrinketId = Guid.NewGuid().ToString(),
+                TrinketDefinitionId = t.TrinketId,
+            }).ToList(),
         };
 
         await _repository.CreateAsync(profile);
     }
-
     public async Task<(bool Success, string? Error)> UpdateUnitMovementSkillAsync(
         string playerId, string ownedUnitId, int skillId)
     {
@@ -143,6 +148,37 @@ public class PlayerProfileService : IPlayerProfileService
         return (true, null);
     }
 
+    public async Task<(bool Success, string? Error)> UpdateUnitTrinketAsync(
+        string playerId, string ownedUnitId, string? ownedTrinketId)
+    {
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return (false, "Profile not found.");
+
+        var unit = profile.OwnedUnits.FirstOrDefault(u => u.OwnedUnitId == ownedUnitId);
+        if (unit == null) return (false, "Unit not found.");
+
+        if (string.IsNullOrEmpty(ownedTrinketId))
+        {
+            unit.EquippedOwnedTrinketId = string.Empty;
+            await _repository.UpdateAsync(profile.Id, profile);
+            return (true, null);
+        }
+
+        var ownedTrinket = profile.OwnedTrinkets.FirstOrDefault(t => t.OwnedTrinketId == ownedTrinketId);
+        if (ownedTrinket == null) return (false, "Trinket not owned.");
+
+        var trinketDef = await _trinketRepository.GetByFilterAsync(t => t.TrinketId == ownedTrinket.TrinketDefinitionId);
+        if (trinketDef == null) return (false, "Trinket definition not found.");
+
+        // Unequip from any other unit
+        foreach (var other in profile.OwnedUnits.Where(u => u.EquippedOwnedTrinketId == ownedTrinketId))
+            other.EquippedOwnedTrinketId = string.Empty;
+
+        unit.EquippedOwnedTrinketId = ownedTrinketId;
+        await _repository.UpdateAsync(profile.Id, profile);
+        return (true, null);
+    }
+
     public async Task<List<OwnedWeaponResultDto>> GetOwnedWeaponsByClassIdsAsync(
         string playerId, List<int> classIds)
     {
@@ -183,7 +219,53 @@ public class PlayerProfileService : IPlayerProfileService
         var allUIds = profile.OwnedUnits.Select(u => u.UnitDefinitionUId).ToList();
         return await BuildUnitConfigsAsync(profile, allUIds);
     }
+    public async Task<UnitConfigDto?> GetUnitConfigAsync(string playerId, string ownedUnitId)
+    {
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return null;
 
+        var ownedUnit = profile.OwnedUnits.FirstOrDefault(u => u.OwnedUnitId == ownedUnitId);
+        if (ownedUnit == null) return null;
+
+        var configs = await BuildUnitConfigsAsync(profile, new List<int> { ownedUnit.UnitDefinitionUId });
+        return configs.FirstOrDefault();
+    }
+
+    public async Task<List<OwnedWeaponResultDto>> GetAllOwnedWeaponsAsync(string playerId)
+    {
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return [];
+
+        var equippedIds = profile.OwnedUnits
+            .Select(u => u.EquippedOwnedWeaponId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .ToHashSet();
+
+        return profile.OwnedWeapons
+            .Select(w => new OwnedWeaponResultDto(
+                w.OwnedWeaponId,
+                w.WeaponDefinitionId,
+                equippedIds.Contains(w.OwnedWeaponId)))
+            .ToList();
+    }
+
+    public async Task<List<OwnedTrinketResultDto>> GetAllOwnedTrinketsAsync(string playerId)
+    {
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return [];
+
+        var equippedIds = profile.OwnedUnits
+            .Select(u => u.EquippedOwnedTrinketId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .ToHashSet();
+
+        return profile.OwnedTrinkets
+            .Select(t => new OwnedTrinketResultDto(
+                t.OwnedTrinketId,
+                t.TrinketDefinitionId,
+                equippedIds.Contains(t.OwnedTrinketId)))
+            .ToList();
+    }
     private async Task<List<UnitConfigDto>> BuildUnitConfigsAsync(PlayerProfile profile, List<int> uIds)
     {
         var unitDefs = await _unitRepository.GetAllByFilterAsync(u => uIds.Contains(u.UId));

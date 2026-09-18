@@ -35,6 +35,6 @@ public class EquipmentStatModifiers
     public int MaxHP { get; set; }
     public int Speed { get; set; }
     public int MaxSkillPoint { get; set; }
-    public float DamageMultiplier { get; set; }
-    public float DamageReduction { get; set; }
+    public int DamageMultiplier { get; set; }
+    public int DamageReduction { get; set; }
 }

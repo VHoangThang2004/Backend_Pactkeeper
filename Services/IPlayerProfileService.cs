@@ -21,4 +21,6 @@ public interface IPlayerProfileService
     Task<List<OwnedWeaponResultDto>> GetAllOwnedWeaponsAsync(string playerId);
     Task<List<OwnedTrinketResultDto>> GetAllOwnedTrinketsAsync(string playerId);
     Task<UnitConfigDto?> GetUnitConfigAsync(string playerId, string ownedUnitId);
+    Task AddGemsAsync(string playerId, int gems);
+    Task GrantItemsAsync(string playerId, List<int> unitDefIds, List<int> weaponDefIds, List<int> trinketDefIds);
 }

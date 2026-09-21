@@ -13,7 +13,10 @@ public record MatchSessionDto(
 public record MatchSessionJoinInfoDto(
     string MatchId,
     string ServerIp,
-    int ServerPort
+    int ServerPort,
+    string Mode,
+    string Player1Name,
+    string Player2Name
 );
 
 public record StartMatchRequestDto(
@@ -26,10 +29,17 @@ public record MatchInfoDto(
     string MapId
 );
 
+public record AfterMatchPlayerDataDto(
+    string PlayerId,
+    int UnitsAlive,
+    int TotalUnits
+);
+
 public record MatchResultDataDto(
     string WinnerId,
     int DurationSeconds,
-    int TotalInstants
+    int TotalInstants,
+    List<AfterMatchPlayerDataDto> AfterMatchTeamData
 );
 
 public record MatchHistoryDto(

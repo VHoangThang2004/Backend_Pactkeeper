@@ -40,9 +40,19 @@ public class MatchController : ControllerBase
         if (playerId == null) return Unauthorized();
 
         var match = await _matchService.GetActiveMatchByPlayerIdAsync(playerId);
-        if (match == null) return NotFound();
+        if (match == null) return NotFound(new { message = "no_ongoing_match" });
 
-        return Ok(new MatchSessionJoinInfoDto(match.MatchId, match.ServerIp, match.ServerPort));
+        var p1 = await _profileService.GetByFilterAsync(p => p.PlayerId == match.Player1Id);
+        var p2 = await _profileService.GetByFilterAsync(p => p.PlayerId == match.Player2Id);
+
+        return Ok(new MatchSessionJoinInfoDto(
+            match.MatchId,
+            match.ServerIp,
+            match.ServerPort,
+            match.Mode,
+            p1?.Username ?? match.Player1Id,
+            p2?.Username ?? match.Player2Id
+        ));
     }
 
     [HttpGet("{matchId}/loadouts")]
@@ -86,7 +96,12 @@ public class MatchController : ControllerBase
             history.Player2Id,
             history.Status,
             history.Result != null
-                ? new MatchResultDataDto(history.Result.WinnerId, history.Result.DurationSeconds, history.Result.TotalInstants)
+                ? new MatchResultDataDto(
+                    history.Result.WinnerId,
+                    history.Result.DurationSeconds,
+                    history.Result.TotalInstants,
+                    [..history.Result.AfterMatchTeamData
+                        .Select(p => new AfterMatchPlayerDataDto(p.PlayerId, p.UnitsAlive, p.TotalUnits))])
                 : null,
             history.CompletedAt
         ));
@@ -118,6 +133,21 @@ public class MatchController : ControllerBase
         {
             match.Status = dto.Status;
             match.Result = dto.Result;
+
+            if (dto.Status == "completed" && dto.Result?.AfterMatchTeamData.Count == 2)
+            {
+                var p1Data = dto.Result.AfterMatchTeamData.FirstOrDefault(p => p.PlayerId == match.Player1Id);
+                var p2Data = dto.Result.AfterMatchTeamData.FirstOrDefault(p => p.PlayerId == match.Player2Id);
+
+                if (p1Data != null && p2Data != null)
+                {
+                    int p1Gems = (p2Data.TotalUnits - p2Data.UnitsAlive + p1Data.UnitsAlive) * 10;
+                    int p2Gems = (p1Data.TotalUnits - p1Data.UnitsAlive + p2Data.UnitsAlive) * 10;
+                    await _profileService.AddGemsAsync(match.Player1Id, p1Gems);
+                    await _profileService.AddGemsAsync(match.Player2Id, p2Gems);
+                }
+            }
+
             await _historyService.ArchiveAsync(match);
             await _matchService.DeleteAsync(matchId);
             await _queueService.RemoveByPlayerIdAsync(match.Player1Id);

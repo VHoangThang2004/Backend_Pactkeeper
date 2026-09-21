@@ -6,15 +6,19 @@ namespace GameInventoryApi.Services;
 public class MatchQueueService : IMatchQueueService
 {
     private readonly IMongoRepository<MatchQueueEntry> _repository;
+    private readonly ServerState _serverState;
 
-    public MatchQueueService(IMongoRepository<MatchQueueEntry> repository)
-        => _repository = repository;
-
+    public MatchQueueService(IMongoRepository<MatchQueueEntry> repository, ServerState serverState)
+    {
+        _serverState = serverState;
+        _repository = repository;
+    }
     public Task<MatchQueueEntry?> GetByPlayerIdAsync(string playerId)
         => _repository.GetByFilterAsync(e => e.PlayerId == playerId);
 
     public async Task JoinQueueAsync(string playerId)
     {
+        if(_serverState.MatchmakingBlocked) return;
         var existing = await GetByPlayerIdAsync(playerId);
         if (existing != null) return; // already in queue
 
@@ -26,6 +30,8 @@ public class MatchQueueService : IMatchQueueService
     {
         var existing = await GetByPlayerIdAsync(playerId);
         if (existing == null) return;
+        if (existing.Status == "matched") return;
+
         await _repository.DeleteAsync(existing.Id);
         Console.WriteLine($"[Queue] Player {playerId} left queue.");
     }
@@ -49,5 +55,11 @@ public class MatchQueueService : IMatchQueueService
         var entry = await GetByPlayerIdAsync(playerId);
         if (entry == null) return;
         await _repository.DeleteAsync(entry.Id);
+    }
+    public async Task ClearAllQueueAsync()
+    {
+        var allEntries = await _repository.GetAllAsync();
+        foreach (var entry in allEntries)
+            await _repository.DeleteAsync(entry.Id);
     }
 }

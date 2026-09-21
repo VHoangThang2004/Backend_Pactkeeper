@@ -12,23 +12,55 @@ namespace GameInventoryApi.Services;
 public class AuthService : IAuthService
 {
     private readonly IMongoRepository<User> _userRepository;
+    private readonly IMongoRepository<PlayerProfile> _profileRepository;
     private readonly JwtSettings _jwtSettings;
+    private readonly ServerState _serverState;
 
     public AuthService(
         IMongoRepository<User> userRepository,
-        IOptions<JwtSettings> jwtSettings)
+        IMongoRepository<PlayerProfile> profileRepository,
+        IOptions<JwtSettings> jwtSettings,
+        ServerState serverState)
     {
         _userRepository = userRepository;
+        _profileRepository = profileRepository;
         _jwtSettings = jwtSettings.Value;
+        _serverState = serverState;
     }
 
     public async Task<AuthResponseDto?> LoginAsync(LoginDto dto)
     {
+        // if (_serverState.LoginBlocked) return null; // devmode login is not blocked
         var user = await _userRepository.GetByFilterAsync(u => u.Username == dto.Username);
         if (user == null || !user.HasPassword || user.PasswordHash != dto.Password)
             return null;
 
         return new AuthResponseDto(GenerateJwtToken(user), user.Role, user.Username, user.Id);
+    }
+
+    public async Task<(bool Success, string? Error)> ChangeUsernameAsync(string playerId, string newUsername)
+    {
+        if (string.IsNullOrWhiteSpace(newUsername))
+            return (false, "Username cannot be empty.");
+
+        var existing = await _userRepository.GetByFilterAsync(u => u.Username == newUsername);
+        if (existing != null && existing.Id != playerId)
+            return (false, "Username is already taken.");
+
+        var user = await _userRepository.GetByIdAsync(playerId);
+        if (user == null) return (false, "User not found.");
+
+        user.Username = newUsername;
+        await _userRepository.UpdateAsync(playerId, user);
+
+        var profile = await _profileRepository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile != null)
+        {
+            profile.Username = newUsername;
+            await _profileRepository.UpdateAsync(profile.Id, profile);
+        }
+
+        return (true, null);
     }
 
     private string GenerateJwtToken(User user)

@@ -6,17 +6,20 @@ namespace GameInventoryApi.Services;
 public class MatchSessionService : IMatchSessionService
 {
     private readonly IMongoRepository<MatchSession> _repository;
+    private readonly MatchmakingService _matchmakingService;
 
-    public MatchSessionService(IMongoRepository<MatchSession> repository)
-        => _repository = repository;
-
+    public MatchSessionService(IMongoRepository<MatchSession> repository, MatchmakingService matchmakingService)
+    {
+        _repository = repository;
+        _matchmakingService = matchmakingService;
+    }
     public Task<MatchSession?> GetByMatchIdAsync(string matchId)
         => _repository.GetByFilterAsync(m => m.MatchId == matchId);
 
     public Task<MatchSession?> GetActiveMatchByPlayerIdAsync(string playerId)
         => _repository.GetByFilterAsync(m =>
             (m.Player1Id == playerId || m.Player2Id == playerId) &&
-            m.Status == "active");
+            (m.Status == "pending" || m.Status == "active"));
 
     public async Task<MatchSession> CreateMatchAsync(string player1Id, string player2Id, string serverIp, int port, string mode = "pvp", string mapId = "MD_PVP_001")
     {
@@ -59,5 +62,27 @@ public class MatchSessionService : IMatchSessionService
         var match = await GetByMatchIdAsync(matchId);
         if (match == null) return;
         await _repository.DeleteAsync(match.Id);
+    }
+    public async Task EndAllMatchesAsync()
+    {
+        var active = await _repository.GetAllAsync();
+        foreach (var session in active)
+        {
+            await DeleteAsync(session.MatchId);
+            if (session.ProcessId > 0)
+            {
+                try
+                {
+                    var process = System.Diagnostics.Process.GetProcessById(session.ProcessId);
+                    process.Kill();
+                    _matchmakingService.ReleasePort(session.ServerPort);
+                    Console.WriteLine($"[Match] Killed process {session.ProcessId} for match {session.MatchId}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Match] Failed to kill process {session.ProcessId}: {ex.Message}");
+                }
+            }
+        }
     }
 }

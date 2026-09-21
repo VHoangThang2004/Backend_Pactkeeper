@@ -6,8 +6,15 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Microsoft.Extensions.Options;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
 using System.Text;
+
+BsonSerializer.RegisterSerializer(new EnumSerializer<RewardType>(BsonType.String));
+BsonSerializer.RegisterSerializer(new EnumSerializer<PullType>(BsonType.String));
+BsonSerializer.RegisterSerializer(new EnumSerializer<SceneType>(BsonType.String));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +28,8 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
     var client = new MongoClient(settings.ConnectionString);
     return client.GetDatabase(settings.DatabaseName);
 });
+
+builder.Services.AddSingleton<ServerState>();
 
 builder.Services.AddScoped<IMongoRepository<PlayerProfile>>(sp =>
     new MongoRepository<PlayerProfile>(sp.GetRequiredService<IMongoDatabase>(), "PlayerProfiles"));
@@ -39,6 +48,18 @@ builder.Services.AddScoped<IMongoRepository<MatchHistory>>(sp =>
 
 builder.Services.AddScoped<IMongoRepository<MatchQueueEntry>>(sp =>
     new MongoRepository<MatchQueueEntry>(sp.GetRequiredService<IMongoDatabase>(), "MatchQueue"));
+
+builder.Services.AddScoped<IMongoRepository<PurchaseOrder>>(sp =>
+    new MongoRepository<PurchaseOrder>(sp.GetRequiredService<IMongoDatabase>(), "PurchaseOrders"));
+
+builder.Services.AddScoped<IMongoRepository<Notification>>(sp =>
+    new MongoRepository<Notification>(sp.GetRequiredService<IMongoDatabase>(), "Notifications"));
+
+builder.Services.AddScoped<IMongoRepository<SupportMessage>>(sp =>
+    new MongoRepository<SupportMessage>(sp.GetRequiredService<IMongoDatabase>(), "SupportMessages"));
+
+builder.Services.AddScoped<IMongoRepository<TopUpPack>>(sp =>
+    new MongoRepository<TopUpPack>(sp.GetRequiredService<IMongoDatabase>(), "TopUpPacks"));
 
 builder.Services.AddScoped<IMongoRepository<UnitDefinition>>(sp =>
     new MongoRepository<UnitDefinition>(sp.GetRequiredService<IMongoDatabase>(), "UnitDefinitions"));
@@ -70,9 +91,28 @@ builder.Services.AddScoped<ITeamLoadoutService, TeamLoadoutService>();
 builder.Services.AddScoped<IMatchSessionService, MatchSessionService>();
 builder.Services.AddScoped<IMatchHistoryService, MatchHistoryService>();
 builder.Services.AddScoped<IPlayerProfileService, PlayerProfileService>();
+builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+builder.Services.AddScoped<ITopUpPackService, TopUpPackService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<ISupportService, SupportService>();
+
+builder.Services.AddScoped<IMongoRepository<GachaBanner>>(sp =>
+    new MongoRepository<GachaBanner>(sp.GetRequiredService<IMongoDatabase>(), "GachaBanners"));
+builder.Services.AddScoped<IGachaBannerService, GachaBannerService>();
+builder.Services.AddScoped<IGachaService, GachaService>();
+builder.Services.AddScoped<IMongoRepository<ChapterConfig>>(sp =>
+    new MongoRepository<ChapterConfig>(sp.GetRequiredService<IMongoDatabase>(), "ChapterConfigs"));
+builder.Services.AddScoped<IChapterConfigService, ChapterConfigService>();
+
+builder.Services.AddScoped<IMongoRepository<StoryProgress>>(sp =>
+    new MongoRepository<StoryProgress>(sp.GetRequiredService<IMongoDatabase>(), "StoryProgress"));
+builder.Services.AddScoped<IStoryProgressService, StoryProgressService>();
+
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.Configure<SteamSettings>(builder.Configuration.GetSection("SteamSettings"));
 builder.Services.AddHttpClient<ISteamAuthService, SteamAuthService>();
+builder.Services.Configure<GoogleSettings>(builder.Configuration.GetSection("GoogleSettings"));
+builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 
 var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -91,7 +131,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSwaggerGen(c =>
@@ -123,7 +164,6 @@ var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
-app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

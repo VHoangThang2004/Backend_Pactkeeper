@@ -14,16 +14,19 @@ public class SteamAuthService(
     IPlayerProfileService profileService,
     IOptions<JwtSettings> jwtSettings,
     IOptions<SteamSettings> steamSettings,
-    HttpClient httpClient) : ISteamAuthService
+    HttpClient httpClient,
+    ServerState serverState) : ISteamAuthService
 {
     private readonly IMongoRepository<User> _userRepository = userRepository;
     private readonly IPlayerProfileService _profileService = profileService;
     private readonly JwtSettings _jwtSettings = jwtSettings.Value;
     private readonly SteamSettings _steamSettings = steamSettings.Value;
     private readonly HttpClient _httpClient = httpClient;
+    private readonly ServerState _serverState = serverState;
 
     public async Task<AuthResponseDto?> LoginWithSteamAsync(SteamLoginDto dto)
     {
+        if (_serverState.LoginBlocked) return null;
         string steamId = await VerifySteamTicketAsync(dto.SteamTicket);
         if (string.IsNullOrEmpty(steamId))
         {
@@ -37,15 +40,18 @@ public class SteamAuthService(
 
         if (user == null)
         {
+            string personaName = await GetSteamPersonaNameAsync(steamId);
+            string username = string.IsNullOrEmpty(personaName) ? $"Steam_{steamId}" : personaName;
+
             user = new User
             {
-                Username = $"Steam_{steamId}",
+                Username = username,
                 Role = "Player",
                 LoginProviders = new LoginProviders { SteamId = steamId }
             };
             await _userRepository.CreateAsync(user);
             await _profileService.CreateInitialProfileAsync(user.Id, user.Username);
-            Console.WriteLine($"[SteamAuth] Created new user for SteamId {steamId}");
+            Console.WriteLine($"[SteamAuth] Created new user for SteamId {steamId} with name '{username}'");
         }
 
         return new AuthResponseDto(GenerateJwtToken(user), user.Role, user.Username, user.Id);
@@ -72,6 +78,28 @@ public class SteamAuthService(
         if (!paramsObj.TryGetProperty("steamid", out var steamIdProp)) return string.Empty;
 
         return steamIdProp.GetString() ?? string.Empty;
+    }
+
+    private async Task<string> GetSteamPersonaNameAsync(string steamId)
+    {
+        string url = $"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/" +
+                     $"?key={_steamSettings.WebApiKey}" +
+                     $"&steamids={steamId}";
+
+        var response = await _httpClient.GetAsync(url);
+        if (!response.IsSuccessStatusCode) return string.Empty;
+
+        string json = await response.Content.ReadAsStringAsync();
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("response", out var responseObj)) return string.Empty;
+        if (!responseObj.TryGetProperty("players", out var players)) return string.Empty;
+        if (players.GetArrayLength() == 0) return string.Empty;
+
+        return players[0].TryGetProperty("personaname", out var name)
+            ? name.GetString() ?? string.Empty
+            : string.Empty;
     }
 
     private string GenerateJwtToken(User user)

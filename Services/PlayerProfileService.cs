@@ -266,6 +266,59 @@ public class PlayerProfileService : IPlayerProfileService
                 equippedIds.Contains(t.OwnedTrinketId)))
             .ToList();
     }
+    public async Task AddGemsAsync(string playerId, int gems)
+    {
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return;
+        profile.Gems += gems;
+        await _repository.UpdateAsync(profile.Id, profile);
+    }
+
+    public async Task GrantItemsAsync(string playerId, List<int> unitDefIds, List<int> weaponDefIds, List<int> trinketDefIds)
+    {
+        if (unitDefIds.Count == 0 && weaponDefIds.Count == 0 && trinketDefIds.Count == 0) return;
+
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return;
+
+        if (unitDefIds.Count > 0)
+        {
+            var unitDefs = await _unitRepository.GetAllByFilterAsync(u => unitDefIds.Contains(u.UId));
+            var defMap = unitDefs.ToDictionary(u => u.UId);
+            foreach (var defId in unitDefIds)
+            {
+                if (!defMap.TryGetValue(defId, out var def)) continue;
+                profile.OwnedUnits.Add(new OwnedUnit
+                {
+                    OwnedUnitId = Guid.NewGuid().ToString(),
+                    UnitDefinitionUId = defId,
+                    Grade = 1,
+                    UnlockedClassIds = [.. def.ClassIds],
+                    EquippedMovementSkillId = -1,
+                    EquippedOwnedWeaponId = string.Empty,
+                    EquippedOwnedTrinketId = string.Empty,
+                    EquippedClassSkillId = -1,
+                });
+            }
+        }
+
+        foreach (var defId in weaponDefIds)
+            profile.OwnedWeapons.Add(new OwnedWeapon
+            {
+                OwnedWeaponId = Guid.NewGuid().ToString(),
+                WeaponDefinitionId = defId,
+            });
+
+        foreach (var defId in trinketDefIds)
+            profile.OwnedTrinkets.Add(new OwnedTrinket
+            {
+                OwnedTrinketId = Guid.NewGuid().ToString(),
+                TrinketDefinitionId = defId,
+            });
+
+        await _repository.UpdateAsync(profile.Id, profile);
+    }
+
     private async Task<List<UnitConfigDto>> BuildUnitConfigsAsync(PlayerProfile profile, List<int> uIds)
     {
         var unitDefs = await _unitRepository.GetAllByFilterAsync(u => uIds.Contains(u.UId));
@@ -324,6 +377,7 @@ public class PlayerProfileService : IPlayerProfileService
             result.Add(new UnitConfigDto(
                 OwnedUnitId: ownedUnit.OwnedUnitId,
                 UId: uId,
+                UnitName: unitDef.UnitName,
                 Grade: ownedUnit.Grade,
                 PassiveSkillId: unitDef.PassiveSkillId,
                 EquippedMovementSkillId: ownedUnit.EquippedMovementSkillId,

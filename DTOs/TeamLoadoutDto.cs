@@ -24,6 +24,7 @@ public record EquippedEquipmentDataDto(
 public record UnitConfigDto(
     string OwnedUnitId,
     int UId,
+    string UnitName,
     int Grade,
     int PassiveSkillId,
     int EquippedMovementSkillId,

@@ -13,6 +13,7 @@ public class PlayerProfile
     public string Username { get; set; } = string.Empty;
     public int Level { get; set; } = 1;
     public int Experience { get; set; } = 0;
+    public int Gems { get; set; } = 0;
     public DateTime LastLogin { get; set; } = DateTime.UtcNow;
 
     public List<OwnedUnit> OwnedUnits { get; set; } = new();

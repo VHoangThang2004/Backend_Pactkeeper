@@ -1,4 +1,6 @@
 using GameInventoryApi.Services;
+using GameInventoryApi.Hubs;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,11 +12,13 @@ namespace GameInventoryApi.Controllers;
 public class SupportController(
     ISupportService supportService,
     IPlayerProfileService profileService,
-    INotificationService notificationService) : ControllerBase
+    INotificationService notificationService,
+    IHubContext<SupportHub> hubContext) : ControllerBase
 {
     private readonly ISupportService _supportService = supportService;
     private readonly IPlayerProfileService _profileService = profileService;
     private readonly INotificationService _notificationService = notificationService;
+    private readonly IHubContext<SupportHub> _hubContext = hubContext;
 
     // GET /api/support/chat
     [HttpGet("chat")]
@@ -49,14 +53,19 @@ public class SupportController(
         var username = profile?.Username ?? "Wanderer";
 
         var m = await _supportService.SendMessageAsync(playerId, "user", username, dto.Text, dto.AttachmentUrl ?? "");
-        return Ok(new SupportMessageDto(
+        var messageDto = new SupportMessageDto(
             m.Id,
             m.Sender,
             m.SenderName,
             m.Text,
             m.AttachmentUrl,
             m.CreatedAt
-        ));
+        );
+
+        await _hubContext.Clients.Group("Admins").SendAsync("ReceiveMessage", playerId, messageDto);
+        await _hubContext.Clients.Group(playerId).SendAsync("ReceiveMessage", playerId, messageDto);
+
+        return Ok(messageDto);
     }
 
     // GET /api/support/admin/players
@@ -100,14 +109,18 @@ public class SupportController(
             "The Keeper of Records has sent an answer to your scroll. View the counsel board."
         );
 
-        return Ok(new SupportMessageDto(
+        var messageDto = new SupportMessageDto(
             m.Id,
             m.Sender,
             m.SenderName,
             m.Text,
             m.AttachmentUrl,
             m.CreatedAt
-        ));
+        );
+
+        await _hubContext.Clients.Group(playerId).SendAsync("ReceiveMessage", playerId, messageDto);
+
+        return Ok(messageDto);
     }
 }
 

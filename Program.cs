@@ -11,6 +11,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
+using MongoDB.Driver.GridFS;
 using System.Text;
 
 BsonSerializer.RegisterSerializer(new EnumSerializer<RewardType>(BsonType.String));
@@ -29,6 +30,12 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
     var client = new MongoClient(settings.ConnectionString);
     return client.GetDatabase(settings.DatabaseName);
 });
+
+builder.Services.AddSingleton<IGridFSBucket>(sp =>
+    new GridFSBucket(sp.GetRequiredService<IMongoDatabase>(), new GridFSBucketOptions
+    {
+        BucketName = "support_attachments"
+    }));
 
 builder.Services.AddSingleton<ServerState>();
 

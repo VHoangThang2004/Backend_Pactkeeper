@@ -3,6 +3,9 @@ using GameInventoryApi.Hubs;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Driver;
+using MongoDB.Driver.GridFS;
+using MongoDB.Bson;
 
 namespace GameInventoryApi.Controllers;
 
@@ -13,12 +16,14 @@ public class SupportController(
     ISupportService supportService,
     IPlayerProfileService profileService,
     INotificationService notificationService,
-    IHubContext<SupportHub> hubContext) : ControllerBase
+    IHubContext<SupportHub> hubContext,
+    IGridFSBucket gridFS) : ControllerBase
 {
     private readonly ISupportService _supportService = supportService;
     private readonly IPlayerProfileService _profileService = profileService;
     private readonly INotificationService _notificationService = notificationService;
     private readonly IHubContext<SupportHub> _hubContext = hubContext;
+    private readonly IGridFSBucket _gridFS = gridFS;
 
     // GET /api/support/chat
     [HttpGet("chat")]
@@ -100,7 +105,7 @@ public class SupportController(
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<SupportMessageDto>> AdminReply(string playerId, [FromBody] AdminReplyRequestDto dto)
     {
-        var m = await _supportService.SendMessageAsync(playerId, "admin", "Keeper of Records", dto.Text);
+        var m = await _supportService.SendMessageAsync(playerId, "admin", "Keeper of Records", dto.Text, dto.AttachmentUrl ?? "");
 
         await _notificationService.CreateNotificationAsync(
             playerId,
@@ -122,10 +127,78 @@ public class SupportController(
 
         return Ok(messageDto);
     }
+
+    // POST /api/support/upload
+    [HttpPost("upload")]
+    [Authorize]
+    public async Task<ActionResult<UploadResponseDto>> UploadAttachment(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest("No file uploaded.");
+        }
+
+        var allowedContentTypes = new[] { "image/jpeg", "image/png", "image/gif", "image/webp" };
+        if (!allowedContentTypes.Contains(file.ContentType.ToLower()))
+        {
+            return BadRequest("Invalid image format. Only JPEG, PNG, GIF, and WEBP are allowed.");
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            var options = new GridFSUploadOptions
+            {
+                Metadata = new BsonDocument
+                {
+                    { "ContentType", file.ContentType },
+                    { "OriginalFileName", file.FileName }
+                }
+            };
+
+            var fileId = await _gridFS.UploadFromStreamAsync(file.FileName, stream, options);
+            var fileUrl = $"{Request.Scheme}://{Request.Host}/api/support/images/{fileId}";
+            
+            return Ok(new UploadResponseDto(fileUrl));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error during upload: {ex.Message}");
+        }
+    }
+
+    // GET /api/support/images/{id}
+    [HttpGet("images/{id}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetImage(string id)
+    {
+        if (!ObjectId.TryParse(id, out var objectId))
+        {
+            return BadRequest("Invalid image ID format.");
+        }
+
+        try
+        {
+            var stream = await _gridFS.OpenDownloadStreamAsync(objectId);
+            var contentType = stream.FileInfo.Metadata?.Contains("ContentType") == true
+                ? stream.FileInfo.Metadata["ContentType"].AsString
+                : "application/octet-stream";
+
+            return File(stream, contentType);
+        }
+        catch (GridFSFileNotFoundException)
+        {
+            return NotFound("Image not found in the archives.");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error retrieving image: {ex.Message}");
+        }
+    }
 }
 
 public record CreateSupportMessageRequestDto(string Text, string? AttachmentUrl);
-public record AdminReplyRequestDto(string Text);
+public record AdminReplyRequestDto(string Text, string? AttachmentUrl);
 public record SupportMessageDto(
     string Id,
     string Sender,
@@ -134,3 +207,4 @@ public record SupportMessageDto(
     string AttachmentUrl,
     DateTime CreatedAt
 );
+public record UploadResponseDto(string Url);

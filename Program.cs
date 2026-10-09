@@ -17,6 +17,8 @@ using System.Text;
 BsonSerializer.RegisterSerializer(new EnumSerializer<RewardType>(BsonType.String));
 BsonSerializer.RegisterSerializer(new EnumSerializer<PullType>(BsonType.String));
 BsonSerializer.RegisterSerializer(new EnumSerializer<SceneType>(BsonType.String));
+BsonSerializer.RegisterSerializer(new EnumSerializer<PurchaseLimitReset>(BsonType.String));
+
 
 // Action.Facts is a Dictionary<string, object> (int/bool/string values) — the default ObjectSerializer
 // blocks deserializing arbitrary CLR types, so explicitly allow the primitives we actually store.
@@ -113,9 +115,15 @@ builder.Services.AddScoped<IMongoRepository<GachaBanner>>(sp =>
     new MongoRepository<GachaBanner>(sp.GetRequiredService<IMongoDatabase>(), "GachaBanners"));
 builder.Services.AddScoped<IGachaBannerService, GachaBannerService>();
 builder.Services.AddScoped<IGachaService, GachaService>();
+builder.Services.AddScoped<IMongoRepository<Shop>>(sp =>
+    new MongoRepository<Shop>(sp.GetRequiredService<IMongoDatabase>(), "Shops"));
+builder.Services.AddScoped<IMongoRepository<ShopPurchaseRecord>>(sp =>
+    new MongoRepository<ShopPurchaseRecord>(sp.GetRequiredService<IMongoDatabase>(), "ShopPurchaseRecords"));
+builder.Services.AddScoped<IShopService, ShopService>();
 builder.Services.AddScoped<IMongoRepository<ChapterConfig>>(sp =>
     new MongoRepository<ChapterConfig>(sp.GetRequiredService<IMongoDatabase>(), "ChapterConfigs"));
 builder.Services.AddScoped<IChapterConfigService, ChapterConfigService>();
+
 
 builder.Services.AddScoped<IMongoRepository<StoryProgress>>(sp =>
     new MongoRepository<StoryProgress>(sp.GetRequiredService<IMongoDatabase>(), "StoryProgress"));

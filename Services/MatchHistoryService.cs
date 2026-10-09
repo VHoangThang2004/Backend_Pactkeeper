@@ -10,7 +10,7 @@ public class MatchHistoryService : IMatchHistoryService
     public MatchHistoryService(IMongoRepository<MatchHistory> repository)
         => _repository = repository;
 
-    public async Task ArchiveAsync(MatchSession match)
+    public async Task<MatchHistory> ArchiveAsync(MatchSession match)
     {
         var history = new MatchHistory
         {
@@ -26,6 +26,7 @@ public class MatchHistoryService : IMatchHistoryService
             CreatedAt = match.CreatedAt
         };
         await _repository.CreateAsync(history);
+        return history;
     }
 
     public Task<List<MatchHistory>> GetByPlayerIdAsync(string playerId)

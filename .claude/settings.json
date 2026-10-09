@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Admin\\\\GameInventoryApi\" -Recurse -Directory)",
+      "Bash(Select-Object -First 50)",
+      "Bash(Format-Table FullName)",
+      "Bash(dotnet build *)",
+      "Bash(findstr /i \"error warning succeeded failed\")",
+      "Bash(findstr /v \"MSB302\")",
+      "Bash(Select-String -Pattern \"\\(error CS|Build succeeded|Build FAILED\\)\")"
+    ]
+  }
+}

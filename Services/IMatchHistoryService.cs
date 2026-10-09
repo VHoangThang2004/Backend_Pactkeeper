@@ -4,7 +4,7 @@ namespace GameInventoryApi.Services;
 
 public interface IMatchHistoryService
 {
-    Task ArchiveAsync(MatchSession match);
+    Task<MatchHistory> ArchiveAsync(MatchSession match);
     Task<List<MatchHistory>> GetByPlayerIdAsync(string playerId);
     Task<MatchHistory?> GetByMatchIdAsync(string matchId);
 }

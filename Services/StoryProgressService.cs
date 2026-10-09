@@ -7,13 +7,16 @@ public class StoryProgressService : IStoryProgressService
 {
     private readonly IMongoRepository<StoryProgress> _repository;
     private readonly IChapterConfigService _chapterConfigService;
+    private readonly IActionService _actionService;
 
     public StoryProgressService(
         IMongoRepository<StoryProgress> repository,
-        IChapterConfigService chapterConfigService)
+        IChapterConfigService chapterConfigService,
+        IActionService actionService)
     {
         _repository = repository;
         _chapterConfigService = chapterConfigService;
+        _actionService = actionService;
     }
 
     // Entry point on every login.
@@ -91,6 +94,14 @@ public class StoryProgressService : IStoryProgressService
             current.CompletedAt = DateTime.UtcNow;
             current.UpdatedAt = DateTime.UtcNow;
             await _repository.UpdateAsync(current.Id, current);
+
+            await _actionService.LogActionAsync(playerId, "StoryProgress", current.Id, new Dictionary<string, object>
+            {
+                ["chapterId"] = current.ChapterId,
+                ["sceneId"] = current.SceneId,
+                ["isChapterComplete"] = true,
+            });
+
             return current;
         }
 

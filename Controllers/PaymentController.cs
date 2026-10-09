@@ -1,6 +1,8 @@
 using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using GameInventoryApi.Hubs;
 using PayOS;
 using PayOS.Models.V2.PaymentRequests;
 using System.Text.Json;
@@ -15,7 +17,9 @@ public class PaymentController(
     ITopUpPackService topUpPackService,
     IPurchaseOrderService orderService,
     IPlayerProfileService profileService,
-    INotificationService notificationService) : ControllerBase
+    INotificationService notificationService,
+    IActionService actionService,
+    IHubContext<SupportHub> hubContext) : ControllerBase
 {
     private readonly PayOSClient? _payOSClient = InitClient(configuration);
 
@@ -56,8 +60,8 @@ public class PaymentController(
                     OrderCode = orderCode,
                     Amount = pack.PriceVnd,
                     Description = rawDesc.Length > 25 ? rawDesc[..25] : rawDesc,
-                    CancelUrl = "http://srpg-backend.duckdns.org:5276/cancel.html",
-                    ReturnUrl = "http://srpg-backend.duckdns.org:5276/success.html"
+                    CancelUrl = dto.CancelUrl ?? "https://pactkeeper-web.vercel.app/payment/cancel",
+                    ReturnUrl = dto.ReturnUrl ?? "https://pactkeeper-web.vercel.app/payment/success"
                 };
                 var result = await _payOSClient.PaymentRequests.CreateAsync(request);
                 checkoutUrl = result.CheckoutUrl;
@@ -139,12 +143,20 @@ public class PaymentController(
 
                     Console.WriteLine($"[Webhook] Order {orderCode} confirmed → {order.PlayerId}: +{order.GemsAmount} gems, {order.UnitDefinitionIds.Count} units, {order.WeaponDefinitionIds.Count} weapons, {order.TrinketDefinitionIds.Count} trinkets");
 
+                    await actionService.LogActionAsync(order.PlayerId, "Purchase", order.Id, new Dictionary<string, object>
+                    {
+                        ["packId"] = order.TopUpPackId,
+                        ["gemsAmount"] = order.GemsAmount,
+                    });
+
                     await notificationService.CreateNotificationAsync(
                         order.PlayerId,
                         "success",
                         "Tribute Accepted",
                         $"Your offering of {order.Amount:N0} VND has been received. {order.GemsAmount} Gems added to your treasury."
                     );
+
+                    await hubContext.Clients.Group(order.PlayerId).SendAsync("ReceiveProfileUpdate");
                 }
                 else
                 {
@@ -178,7 +190,7 @@ public class PaymentController(
     }
 }
 
-public record CreateOrderRequestDto(string PackId);
+public record CreateOrderRequestDto(string PackId, string? ReturnUrl, string? CancelUrl);
 public record CreateOrderResponseDto(long OrderCode, string CheckoutUrl, string Status);
 public record TransactionHistoryDto(
     long OrderCode,

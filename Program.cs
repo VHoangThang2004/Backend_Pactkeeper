@@ -18,6 +18,11 @@ BsonSerializer.RegisterSerializer(new EnumSerializer<RewardType>(BsonType.String
 BsonSerializer.RegisterSerializer(new EnumSerializer<PullType>(BsonType.String));
 BsonSerializer.RegisterSerializer(new EnumSerializer<SceneType>(BsonType.String));
 
+// Action.Facts is a Dictionary<string, object> (int/bool/string values) — the default ObjectSerializer
+// blocks deserializing arbitrary CLR types, so explicitly allow the primitives we actually store.
+BsonSerializer.RegisterSerializer(new ObjectSerializer(type =>
+    ObjectSerializer.DefaultAllowedTypes(type) || type == typeof(int) || type == typeof(bool) || type == typeof(string)));
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDbSettings"));
@@ -116,6 +121,19 @@ builder.Services.AddScoped<IMongoRepository<StoryProgress>>(sp =>
     new MongoRepository<StoryProgress>(sp.GetRequiredService<IMongoDatabase>(), "StoryProgress"));
 builder.Services.AddScoped<IStoryProgressService, StoryProgressService>();
 
+builder.Services.AddScoped<IMongoRepository<GameInventoryApi.Models.Action>>(sp =>
+    new MongoRepository<GameInventoryApi.Models.Action>(sp.GetRequiredService<IMongoDatabase>(), "Actions"));
+builder.Services.AddScoped<IMongoRepository<RewardRule>>(sp =>
+    new MongoRepository<RewardRule>(sp.GetRequiredService<IMongoDatabase>(), "RewardRules"));
+builder.Services.AddScoped<IMongoRepository<RewardProgress>>(sp =>
+    new MongoRepository<RewardProgress>(sp.GetRequiredService<IMongoDatabase>(), "RewardProgress"));
+builder.Services.AddScoped<IMongoRepository<GachaResult>>(sp =>
+    new MongoRepository<GachaResult>(sp.GetRequiredService<IMongoDatabase>(), "GachaResults"));
+builder.Services.AddScoped<IActionService, ActionService>();
+builder.Services.AddScoped<IRewardEvaluationService, RewardEvaluationService>();
+builder.Services.AddScoped<IRewardRuleService, RewardRuleService>();
+builder.Services.AddScoped<IRewardProgressService, RewardProgressService>();
+
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.Configure<SteamSettings>(builder.Configuration.GetSection("SteamSettings"));
 builder.Services.AddHttpClient<ISteamAuthService, SteamAuthService>();
@@ -158,6 +176,16 @@ builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", builder =>
+    {
+        builder.AllowAnyOrigin()
+               .AllowAnyMethod()
+               .AllowAnyHeader();
+    });
+});
+
 builder.Services.AddSwaggerGen(c =>
 {
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -187,6 +215,7 @@ var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

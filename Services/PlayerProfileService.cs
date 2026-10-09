@@ -319,6 +319,88 @@ public class PlayerProfileService : IPlayerProfileService
         await _repository.UpdateAsync(profile.Id, profile);
     }
 
+    // Gems awarded instead of a duplicate item, by tier
+    private static int DuplicateCompensation(int tier) => tier switch
+    {
+        1 => 30,
+        2 => 80,
+        3 => 150,
+        _ => 30
+    };
+
+    // Applies a single Reward to an already-loaded profile (mutates in place, caller persists).
+    // rewardTier drives duplicate-compensation gem amounts (see DuplicateCompensation); callers
+    // outside gacha context (e.g. mission/quest rewards) can leave it at the default.
+    public static (bool IsDuplicate, int CompensationGems) ApplyReward(PlayerProfile profile, Reward reward, int rewardTier = 1)
+    {
+        switch (reward.Type)
+        {
+            case RewardType.Gems:
+                profile.Gems += reward.Amount;
+                return (false, 0);
+
+            case RewardType.Weapon:
+                if (profile.OwnedWeapons.Any(w => w.WeaponDefinitionId == reward.DefinitionId))
+                {
+                    int comp = DuplicateCompensation(rewardTier);
+                    profile.Gems += comp;
+                    return (true, comp);
+                }
+                profile.OwnedWeapons.Add(new OwnedWeapon
+                {
+                    OwnedWeaponId = Guid.NewGuid().ToString(),
+                    WeaponDefinitionId = reward.DefinitionId,
+                });
+                return (false, 0);
+
+            case RewardType.Trinket:
+                if (profile.OwnedTrinkets.Any(t => t.TrinketDefinitionId == reward.DefinitionId))
+                {
+                    int comp = DuplicateCompensation(rewardTier);
+                    profile.Gems += comp;
+                    return (true, comp);
+                }
+                profile.OwnedTrinkets.Add(new OwnedTrinket
+                {
+                    OwnedTrinketId = Guid.NewGuid().ToString(),
+                    TrinketDefinitionId = reward.DefinitionId,
+                });
+                return (false, 0);
+
+            case RewardType.Unit:
+                var owned = profile.OwnedUnits.FirstOrDefault(u => u.UnitDefinitionUId == reward.DefinitionId);
+                if (owned != null)
+                {
+                    if (owned.UnlockedClassIds.Contains(reward.ClassId))
+                    {
+                        // Class already unlocked — duplicate
+                        int comp = DuplicateCompensation(rewardTier);
+                        profile.Gems += comp;
+                        return (true, comp);
+                    }
+                    // Unit owned but class not yet unlocked
+                    owned.UnlockedClassIds.Add(reward.ClassId);
+                    return (false, 0);
+                }
+                // Brand new unit
+                profile.OwnedUnits.Add(new OwnedUnit
+                {
+                    OwnedUnitId = Guid.NewGuid().ToString(),
+                    UnitDefinitionUId = reward.DefinitionId,
+                    Grade = 1,
+                    UnlockedClassIds = [reward.ClassId],
+                    EquippedMovementSkillId = -1,
+                    EquippedOwnedWeaponId = string.Empty,
+                    EquippedOwnedTrinketId = string.Empty,
+                    EquippedClassSkillId = -1,
+                });
+                return (false, 0);
+
+            default:
+                return (false, 0);
+        }
+    }
+
     private async Task<List<UnitConfigDto>> BuildUnitConfigsAsync(PlayerProfile profile, List<int> uIds)
     {
         var unitDefs = await _unitRepository.GetAllByFilterAsync(u => uIds.Contains(u.UId));

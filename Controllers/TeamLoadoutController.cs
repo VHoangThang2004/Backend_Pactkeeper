@@ -46,4 +46,26 @@ public class TeamLoadoutController : ControllerBase
         await _loadoutService.SaveAsync(playerId, dto.UIds);
         return NoContent();
     }
+    
+    [HttpGet("first-unit-id")]
+    public async Task<ActionResult<string>> GetFirstUnitId()
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var loadout = await _loadoutService.GetByPlayerIdAsync(playerId);
+        if (loadout == null || loadout.UIds.Count == 0)
+            return NotFound("No units in team loadout.");
+
+        var firstUId = loadout.UIds[0];
+
+        var profile = await _profileService.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return NotFound("Profile not found.");
+
+        var ownedUnit = profile.OwnedUnits.FirstOrDefault(u => u.UnitDefinitionUId == firstUId);
+        if (ownedUnit == null)
+            return NotFound($"No owned unit found for UId {firstUId}.");
+
+        return Ok(new { ownedUnitId = ownedUnit.OwnedUnitId });
+    }
 }

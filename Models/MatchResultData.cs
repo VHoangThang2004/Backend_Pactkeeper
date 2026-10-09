@@ -5,6 +5,7 @@ public class AfterMatchPlayerData
     public string PlayerId { get; set; } = string.Empty;
     public int UnitsAlive { get; set; }
     public int TotalUnits { get; set; }
+    public int UnitsDefeated { get; set; }
 }
 
 public class MatchResultData

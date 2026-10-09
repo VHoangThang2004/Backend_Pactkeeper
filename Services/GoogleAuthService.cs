@@ -46,7 +46,11 @@ public class GoogleAuthService(
             {
                 var payload = await GoogleJsonWebSignature.ValidateAsync(dto.IdToken, new GoogleJsonWebSignature.ValidationSettings
                 {
-                    Audience = new[] { _googleSettings.ClientId }
+                    Audience = new[] { 
+                        _googleSettings.ClientId, // Giữ lại Client ID cũ (có thể là Android)
+                        "978068800706-9kkjenpkuv409v69n48dph6p3shprq3m.apps.googleusercontent.com", // Android Client ID cứng
+                        "978068800706-gr8nfa4iq66m4e6njggntupslphdar10.apps.googleusercontent.com"  // Web Client ID cứng
+                    }
                 });
 
                 googleId = payload.Subject;

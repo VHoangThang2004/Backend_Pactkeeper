@@ -15,6 +15,7 @@ public class MatchController : ControllerBase
     private readonly IMatchHistoryService _historyService;
     private readonly IMatchQueueService _queueService;
     private readonly MatchmakingService _matchmakingService;
+    private readonly IActionService _actionService;
 
     public MatchController(
         IMatchSessionService matchService,
@@ -22,7 +23,8 @@ public class MatchController : ControllerBase
         IPlayerProfileService profileService,
         IMatchHistoryService historyService,
         IMatchQueueService queueService,
-        MatchmakingService matchmakingService)
+        MatchmakingService matchmakingService,
+        IActionService actionService)
     {
         _matchService = matchService;
         _loadoutService = loadoutService;
@@ -30,6 +32,7 @@ public class MatchController : ControllerBase
         _historyService = historyService;
         _queueService = queueService;
         _matchmakingService = matchmakingService;
+        _actionService = actionService;
     }
 
     [HttpGet("current")]
@@ -134,6 +137,9 @@ public class MatchController : ControllerBase
             match.Status = dto.Status;
             match.Result = dto.Result;
 
+            string? player1Id = null, player2Id = null;
+            Dictionary<string, object>? facts1 = null, facts2 = null;
+
             if (dto.Status == "completed" && dto.Result?.AfterMatchTeamData.Count == 2)
             {
                 var p1Data = dto.Result.AfterMatchTeamData.FirstOrDefault(p => p.PlayerId == match.Player1Id);
@@ -141,14 +147,44 @@ public class MatchController : ControllerBase
 
                 if (p1Data != null && p2Data != null)
                 {
-                    int p1Gems = (p2Data.TotalUnits - p2Data.UnitsAlive + p1Data.UnitsAlive) * 10;
-                    int p2Gems = (p1Data.TotalUnits - p1Data.UnitsAlive + p2Data.UnitsAlive) * 10;
+                    int p1UnitsDefeated = p2Data.TotalUnits - p2Data.UnitsAlive;
+                    int p2UnitsDefeated = p1Data.TotalUnits - p1Data.UnitsAlive;
+
+                    int p1Gems = (p1UnitsDefeated + p1Data.UnitsAlive) * 10;
+                    int p2Gems = (p2UnitsDefeated + p2Data.UnitsAlive) * 10;
                     await _profileService.AddGemsAsync(match.Player1Id, p1Gems);
                     await _profileService.AddGemsAsync(match.Player2Id, p2Gems);
+
+                    player1Id = match.Player1Id;
+                    player2Id = match.Player2Id;
+                    facts1 = new Dictionary<string, object>
+                    {
+                        ["won"] = dto.Result.WinnerId == match.Player1Id,
+                        ["unitsAlive"] = p1Data.UnitsAlive,
+                        ["totalUnits"] = p1Data.TotalUnits,
+                        ["unitsDefeated"] = p1UnitsDefeated,
+                        ["durationSeconds"] = dto.Result.DurationSeconds,
+                        ["instants"] = dto.Result.TotalInstants,
+                    };
+                    facts2 = new Dictionary<string, object>
+                    {
+                        ["won"] = dto.Result.WinnerId == match.Player2Id,
+                        ["unitsAlive"] = p2Data.UnitsAlive,
+                        ["totalUnits"] = p2Data.TotalUnits,
+                        ["unitsDefeated"] = p2UnitsDefeated,
+                        ["durationSeconds"] = dto.Result.DurationSeconds,
+                        ["instants"] = dto.Result.TotalInstants,
+                    };
                 }
             }
 
-            await _historyService.ArchiveAsync(match);
+            var history = await _historyService.ArchiveAsync(match);
+
+            if (player1Id != null && facts1 != null && facts2 != null)
+            {
+                await _actionService.LogActionAsync(player1Id, "MatchResult", history.Id, facts1);
+                await _actionService.LogActionAsync(player2Id!, "MatchResult", history.Id, facts2);
+            }
             await _matchService.DeleteAsync(matchId);
             await _queueService.RemoveByPlayerIdAsync(match.Player1Id);
             await _queueService.RemoveByPlayerIdAsync(match.Player2Id);

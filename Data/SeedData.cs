@@ -12,6 +12,7 @@ public static class SeedData
         await SeedTopUpPacksAsync(database);
         await SeedGachaBannersAsync(database);
         await SeedChapterConfigsAsync(database);
+        await SeedRewardRulesAsync(database);
     }
 
     private static async Task SeedChapterConfigsAsync(IMongoDatabase database)
@@ -48,7 +49,21 @@ public static class SeedData
                         SceneId = 2,
                         Type = SceneType.Dialogue,
                         Description = "Main menu walkthrough tooltips",
-                        AutoNext=false
+                        AutoNext=true
+                    },
+                    new SceneConfig
+                    {
+                        SceneId = 3,
+                        Type = SceneType.Dialogue,
+                        Description = "Unit list walkthrough tooltips",
+                        AutoNext=true
+                    },
+                    new SceneConfig
+                    {
+                        SceneId = 4,
+                        Type = SceneType.Dialogue,
+                        Description = "Unit config walkthrough tooltips",
+                        AutoNext=true
                     },
                 }
             }
@@ -410,5 +425,102 @@ public static class SeedData
 
         await col.InsertOneAsync(standardBanner);
         Console.WriteLine("[Seed] GachaBanners seeded.");
+    }
+
+    private static async Task SeedRewardRulesAsync(IMongoDatabase database)
+    {
+        var col = database.GetCollection<RewardRule>("RewardRules");
+        if (await col.CountDocumentsAsync(_ => true) > 0)
+        {
+            Console.WriteLine("[Seed] RewardRules already seeded, skipping.");
+            return;
+        }
+
+        await col.InsertManyAsync(new[]
+        {
+            // MatchResult — simple bool condition, +1 per qualifying action
+            new RewardRule
+            {
+                ActionType = "MatchResult",
+                Conditions = [ new() { Field = "won", Op = "==", Value = "true" } ],
+                AccumulateField = null,
+                TargetCount = 3,
+                Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = 500 },
+                IsActive = true,
+            },
+
+            // MatchResult — multi-condition (bool + numeric >=), grants a tier-2 weapon (exercises the
+            // dedupe/compensation path in PlayerProfileService.ApplyReward if already owned)
+            new RewardRule
+            {
+                ActionType = "MatchResult",
+                Conditions =
+                [
+                    new() { Field = "won", Op = "==", Value = "true" },
+                    new() { Field = "unitsAlive", Op = ">=", Value = "3" },
+                ],
+                AccumulateField = null,
+                TargetCount = 1,
+                Reward = new() { Type = RewardType.Weapon, DefinitionId = 7, Amount = 1 }, // Sharp Dagger
+                IsActive = true,
+            },
+
+            // MatchResult — long-run counter that grants a Unit (exercises RewardType.Unit + ClassId)
+            new RewardRule
+            {
+                ActionType = "MatchResult",
+                Conditions = [ new() { Field = "won", Op = "==", Value = "true" } ],
+                AccumulateField = null,
+                TargetCount = 10,
+                Reward = new() { Type = RewardType.Unit, DefinitionId = 6, ClassId = 6, Amount = 1 }, // Druid
+                IsActive = true,
+            },
+
+            // GachaPull — accumulates the actual pull count per action instead of counting actions
+            new RewardRule
+            {
+                ActionType = "GachaPull",
+                Conditions = [],
+                AccumulateField = "pullCount",
+                TargetCount = 5,
+                Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = 300 },
+                IsActive = true,
+            },
+
+            // GachaPull — string condition on rarestTier
+            new RewardRule
+            {
+                ActionType = "GachaPull",
+                Conditions = [ new() { Field = "rarestTier", Op = "==", Value = "3" } ],
+                AccumulateField = null,
+                TargetCount = 1,
+                Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = 1000 },
+                IsActive = true,
+            },
+
+            // Purchase — accumulates gems spent across purchases
+            new RewardRule
+            {
+                ActionType = "Purchase",
+                Conditions = [],
+                AccumulateField = "gemsAmount",
+                TargetCount = 1000,
+                Reward = new() { Type = RewardType.Trinket, DefinitionId = 5, Amount = 1 }, // Steel Heels
+                IsActive = true,
+            },
+
+            // StoryProgress — chapter-complete condition
+            new RewardRule
+            {
+                ActionType = "StoryProgress",
+                Conditions = [ new() { Field = "chapterId", Op = "==", Value = "0" } ],
+                AccumulateField = null,
+                TargetCount = 1,
+                Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = 200 },
+                IsActive = true,
+            },
+        });
+
+        Console.WriteLine("[Seed] RewardRules seeded.");
     }
 }

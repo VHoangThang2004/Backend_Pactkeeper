@@ -15,3 +15,22 @@ public record GachaPullResponseDto(
     int GemsSpent,
     int GemsRemaining
 );
+
+public record GachaHistoryEntryDto(
+    string Id,
+    string BannerId,
+    string BannerName,
+    PullType PullType,
+    int GemsSpent,
+    List<GachaPullResultItemDto> Items,
+    DateTime Timestamp
+);
+
+public record GachaHistoryResponseDto(
+    List<GachaHistoryEntryDto> Items,
+    int TotalCount,
+    int Page,
+    int PageSize,
+    int TotalPages
+);
+

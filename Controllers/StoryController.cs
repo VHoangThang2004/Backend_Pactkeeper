@@ -42,7 +42,7 @@ public class StoryController : ControllerBase
 
         var progress = await _storyService.GetCurrentAsync(playerId);
 
-        // Attach scene config so client knows type and autoNext
+        // Attach scene config so client knows type and autoResume
         var scene = await _chapterConfigService.GetSceneAsync(
             progress.ChapterId, progress.SceneId);
 
@@ -52,7 +52,8 @@ public class StoryController : ControllerBase
             progress.IsCompleted,
             progress.IsChapterCompleted,
             scene?.Type.ToString() ?? "Unknown",
-            scene?.AutoNext ?? false
+            scene?.AutoResume ?? false,
+            false
         ));
     }
 
@@ -85,23 +86,15 @@ public class StoryController : ControllerBase
         if (scene.Type == SceneType.Battle && current.ChapterId != 0)
             return BadRequest("Battle scenes are completed by the server, not the client.");
 
-        var updated = await _storyService.CompleteCurrentAsync(playerId);
-
-        return Ok(new CurrentProgressDto(
-            updated.ChapterId,
-            updated.SceneId,
-            updated.IsCompleted,
-            updated.IsChapterCompleted,
-            scene.Type.ToString(),
-            scene.AutoNext
-        ));
+        // Auto-advances server-side if scene.AutoAdvance
+        return Ok(ToDto(await _storyService.CompleteAndAdvanceAsync(playerId, scene)));
     }
 
     // -------------------------------------------------------
     // POST /api/story/progress/next
     // No body. Starts the next scene (isCompleted=false on it).
     // Rejected if current scene not yet completed.
-    // Client calls this immediately if autoNext=true, or waits for player input.
+    // Used for manual advance when the completed scene has AutoAdvance=false.
     // -------------------------------------------------------
     [HttpPost("progress/next")]
     [Authorize(Roles = "Player")]
@@ -125,7 +118,7 @@ public class StoryController : ControllerBase
             return Ok(new CurrentProgressDto(
                 next.ChapterId, next.SceneId,
                 next.IsCompleted, next.IsChapterCompleted,
-                "None", false));
+                "None", false, false));
 
         var nextScene = await _chapterConfigService.GetSceneAsync(
             next.ChapterId, next.SceneId);
@@ -136,7 +129,8 @@ public class StoryController : ControllerBase
             next.IsCompleted,
             next.IsChapterCompleted,
             nextScene?.Type.ToString() ?? "Unknown",
-            nextScene?.AutoNext ?? false
+            nextScene?.AutoResume ?? false,
+            false
         ));
     }
 
@@ -164,38 +158,20 @@ public class StoryController : ControllerBase
         if (current.IsCompleted)
             return BadRequest("Battle already marked complete.");
 
-        // Complete the battle scene
-        await _storyService.CompleteCurrentAsync(dto.PlayerId);
-
-        // If autoNext, immediately advance to next scene
-        CurrentProgressDto response;
-        if (scene.AutoNext)
-        {
-            var next = await _storyService.StartNextAsync(dto.PlayerId);
-            var nextScene = next != null && !next.IsChapterCompleted
-                ? await _chapterConfigService.GetSceneAsync(next.ChapterId, next.SceneId)
-                : null;
-
-            response = new CurrentProgressDto(
-                next?.ChapterId ?? current.ChapterId,
-                next?.SceneId ?? current.SceneId,
-                next?.IsCompleted ?? true,
-                next?.IsChapterCompleted ?? false,
-                nextScene?.Type.ToString() ?? "None",
-                nextScene?.AutoNext ?? false
-            );
-        }
-        else
-        {
-            response = new CurrentProgressDto(
-                current.ChapterId, current.SceneId,
-                true, false,
-                scene.Type.ToString(), false
-            );
-        }
-
-        return Ok(response);
+        // Complete the battle scene (auto-advances server-side if scene.AutoAdvance)
+        return Ok(ToDto(await _storyService.CompleteAndAdvanceAsync(dto.PlayerId, scene)));
     }
+    
+    // Pure mapping: AdvanceResult -> DTO. No business logic here.
+    private static CurrentProgressDto ToDto(AdvanceResult r) => new(
+        r.Progress.ChapterId,
+        r.Progress.SceneId,
+        r.Progress.IsCompleted,
+        r.Progress.IsChapterCompleted,
+        r.Scene?.Type.ToString() ?? "None",
+        r.Scene?.AutoResume ?? false,
+        r.Advanced
+    );
 
     // -------------------------------------------------------
     // POST /api/story/match
@@ -264,7 +240,8 @@ public record CurrentProgressDto(
     bool IsCompleted,
     bool IsChapterCompleted,
     string SceneType,       // "Cutscene" | "Dialogue" | "Battle" | "None"
-    bool AutoNext           // client calls /next immediately if true
+    bool AutoResume, // Client uses this in the main menu to load the scene directly.
+    bool AdvancedFromPrev // (optional) true if this response is the result of an auto-advance
 );
 public record StoryProgressDto(int ChapterId, int SceneId, bool IsCompleted, bool IsChapterCompleted);
 public record BattleCompleteDto(string PlayerId);

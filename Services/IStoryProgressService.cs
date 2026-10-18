@@ -2,6 +2,11 @@ using GameInventoryApi.Models;
 
 namespace GameInventoryApi.Services;
 
+// Progress: final state after the operation.
+// Scene:    config of the scene the player is now on (null if chapter finished).
+// Advanced: true if the server moved the player past the completed scene (AutoAdvance).
+public record AdvanceResult(StoryProgress Progress, SceneConfig? Scene, bool Advanced);
+
 public interface IStoryProgressService
 {
     // Entry point on every login.
@@ -11,6 +16,10 @@ public interface IStoryProgressService
     // Mark current scene as completed.
     // Does NOT advance to next scene — that's /next.
     Task<StoryProgress> CompleteCurrentAsync(string playerId);
+
+    // Complete the current scene and, if completedScene.AutoAdvance, advance to the next
+    // scene (or mark the chapter done) in a SINGLE write.
+    Task<AdvanceResult> CompleteAndAdvanceAsync(string playerId, SceneConfig completedScene);
 
     // Advance to the next scene (sets isCompleted=false on it).
     // Fails if current scene is not yet completed.

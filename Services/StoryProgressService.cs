@@ -69,6 +69,51 @@ public class StoryProgressService : IStoryProgressService
         return current;
     }
 
+    // Complete current scene; if completedScene.AutoAdvance, also move to the next scene
+    // (or mark the chapter complete). The final state is computed in memory and persisted
+    // with ONE UpdateAsync, so there is no half-done state (completed but not advanced).
+    public async Task<AdvanceResult> CompleteAndAdvanceAsync(string playerId, SceneConfig completedScene)
+    {
+        var current = await GetCurrentAsync(playerId);
+        var now = DateTime.UtcNow;
+
+        current.IsCompleted = true;
+        current.UpdatedAt = now;
+
+        if (!completedScene.AutoAdvance)
+        {
+            await _repository.UpdateAsync(current.Id, current);
+            return new AdvanceResult(current, completedScene, false);
+        }
+
+        var chapter = await _chapterConfigService.GetByChapterIdAsync(current.ChapterId);
+        var nextScene = chapter?.Scenes
+            .Where(s => s.SceneId > current.SceneId)
+            .OrderBy(s => s.SceneId)
+            .FirstOrDefault();
+
+        if (nextScene == null)
+        {
+            current.IsChapterCompleted = true;
+            current.CompletedAt = now;
+            await _repository.UpdateAsync(current.Id, current);
+
+            await _actionService.LogActionAsync(playerId, "StoryProgress", current.Id, new Dictionary<string, object>
+            {
+                ["chapterId"] = current.ChapterId,
+                ["sceneId"] = current.SceneId,
+                ["isChapterComplete"] = true,
+            });
+
+            return new AdvanceResult(current, null, true);
+        }
+
+        current.SceneId = nextScene.SceneId;
+        current.IsCompleted = false;
+        await _repository.UpdateAsync(current.Id, current);
+        return new AdvanceResult(current, nextScene, true);
+    }
+    
     // Advance to the next scene.
     // Rejected if current scene not yet completed.
     // Returns null if no next scene exists (chapter fully done).

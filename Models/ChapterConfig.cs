@@ -10,13 +10,17 @@ public enum SceneType
     Battle      // Server completes — must win to complete
 }
 
+[BsonIgnoreExtraElements]
 public class SceneConfig
 {
     public int SceneId { get; set; }
     public SceneType Type { get; set; }
 
-    // If true, client calls /next immediately after /complete without waiting for player input
-    public bool AutoNext { get; set; } = false;
+    // If true: when opening the main menu while in this scene (incomplete), the client loads directly into the scene.
+    public bool AutoResume { get; set; } = false;
+
+    // If true: as soon as this scene is completed, the backend automatically moves to the next scene
+    public bool AutoAdvance { get; set; } = false;
 
     public string Description { get; set; } = string.Empty;
 }

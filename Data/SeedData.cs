@@ -18,10 +18,9 @@ public static class SeedData
     private static async Task SeedChapterConfigsAsync(IMongoDatabase database)
     {
         var chapters = database.GetCollection<ChapterConfig>("ChapterConfigs");
-        if (await chapters.CountDocumentsAsync(_ => true) > 0)
-            return;
-
-        await chapters.InsertManyAsync(new[]
+        // Always refresh chapter configs (replace by ChapterId) so schema changes
+        // such as AutoNext -> AutoResume/AutoAdvance reach already-seeded databases.
+        var configs = new[]
         {
             new ChapterConfig
             {
@@ -35,53 +34,66 @@ public static class SeedData
                         SceneId = 0,
                         Type = SceneType.Cutscene,
                         Description = "Name input screen — player signs their name",
-                        AutoNext=true
+                        AutoResume=true,
+                        AutoAdvance=true
                     },
                     new SceneConfig
                     {
                         SceneId = 1,
                         Type = SceneType.Battle,
                         Description = "Tutorial battle — learn movement and skills",
-                        AutoNext=true
+                        AutoResume=true,
+                        AutoAdvance=true
                     },
                     new SceneConfig
                     {
                         SceneId = 2,
                         Type = SceneType.Battle,
                         Description = "Tutorial battle 2 — delayed weapon",
-                        AutoNext=true
+                        AutoResume=true,
+                        AutoAdvance=true
                     },
                     new SceneConfig
                     {
                         SceneId = 3,
                         Type = SceneType.Battle,
                         Description = "Tutorial battle 3 — synergy combo",
-                        AutoNext=true
+                        AutoResume=true,
+                        AutoAdvance=true
                     },
                     new SceneConfig
                     {
                         SceneId = 4,
                         Type = SceneType.Dialogue,
                         Description = "Main menu walkthrough tooltips",
-                        AutoNext=true
+                        AutoResume=true,
+                        AutoAdvance=true
                     },
                     new SceneConfig
                     {
                         SceneId = 5,
                         Type = SceneType.Dialogue,
                         Description = "Unit list walkthrough tooltips",
-                        AutoNext=true
+                        AutoResume=true,
+                        AutoAdvance=true
                     },
                     new SceneConfig
                     {
                         SceneId = 6,
                         Type = SceneType.Dialogue,
                         Description = "Unit config walkthrough tooltips",
-                        AutoNext=true
+                        AutoResume=true,
+                        AutoAdvance=true
                     },
                 }
             }
-        });
+        };
+
+        foreach (var config in configs)
+        {
+            await chapters.DeleteManyAsync(c => c.ChapterId == config.ChapterId);
+            await chapters.InsertOneAsync(config);
+        }
 
         Console.WriteLine("[Seed] ChapterConfigs seeded.");
     }

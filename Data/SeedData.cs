@@ -47,20 +47,34 @@ public static class SeedData
                     new SceneConfig
                     {
                         SceneId = 2,
+                        Type = SceneType.Battle,
+                        Description = "Tutorial battle 2 — delayed weapon",
+                        AutoNext=true
+                    },
+                    new SceneConfig
+                    {
+                        SceneId = 3,
+                        Type = SceneType.Battle,
+                        Description = "Tutorial battle 3 — synergy combo",
+                        AutoNext=true
+                    },
+                    new SceneConfig
+                    {
+                        SceneId = 4,
                         Type = SceneType.Dialogue,
                         Description = "Main menu walkthrough tooltips",
                         AutoNext=true
                     },
                     new SceneConfig
                     {
-                        SceneId = 3,
+                        SceneId = 5,
                         Type = SceneType.Dialogue,
                         Description = "Unit list walkthrough tooltips",
                         AutoNext=true
                     },
                     new SceneConfig
                     {
-                        SceneId = 4,
+                        SceneId = 6,
                         Type = SceneType.Dialogue,
                         Description = "Unit config walkthrough tooltips",
                         AutoNext=true

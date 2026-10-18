@@ -185,8 +185,8 @@ public class MatchmakingService : BackgroundService
     private static string GetMapIdForScene(int chapterId, int sceneId) => (chapterId, sceneId) switch
     {
         (0, 1) => "MD_PVE_000",   // Chapter 0 Scene 1 — tutorial battle 1
-        (0, 2) => "MD_PVE_000",   // Chapter 0 Scene 2 — tutorial battle 2
-        (0, 3) => "MD_PVE_000",   // Chapter 0 Scene 3 — tutorial battle 3 
+        (0, 2) => "MD_PVE_001",   // Chapter 0 Scene 2 — tutorial battle 2
+        (0, 3) => "MD_PVE_002",   // Chapter 0 Scene 3 — tutorial battle 3
         _ => "MD_PVP_001"
     };
 }

@@ -80,7 +80,9 @@ public class StoryController : ControllerBase
         if (scene == null)
             return NotFound("Scene config not found.");
 
-        if (scene.Type == SceneType.Battle)
+        // Chapter 0 tutorial battles are completed by the client (BattleTutorialStarter).
+        // Competitive Battle scenes (Ch1+) must only be completed by the game server.
+        if (scene.Type == SceneType.Battle && current.ChapterId != 0)
             return BadRequest("Battle scenes are completed by the server, not the client.");
 
         var updated = await _storyService.CompleteCurrentAsync(playerId);

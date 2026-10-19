@@ -111,6 +111,14 @@ builder.Services.AddScoped<ITopUpPackService, TopUpPackService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<ISupportService, SupportService>();
 
+builder.Services.AddSingleton<IUserPresenceTracker, UserPresenceTracker>();
+builder.Services.AddScoped<IMongoRepository<Friendship>>(sp =>
+    new MongoRepository<Friendship>(sp.GetRequiredService<IMongoDatabase>(), "Friendships"));
+builder.Services.AddScoped<IMongoRepository<FriendlyMatchInvite>>(sp =>
+    new MongoRepository<FriendlyMatchInvite>(sp.GetRequiredService<IMongoDatabase>(), "FriendlyMatchInvites"));
+builder.Services.AddScoped<IFriendshipService, FriendshipService>();
+builder.Services.AddScoped<IFriendlyInviteService, FriendlyInviteService>();
+
 builder.Services.AddScoped<IMongoRepository<GachaBanner>>(sp =>
     new MongoRepository<GachaBanner>(sp.GetRequiredService<IMongoDatabase>(), "GachaBanners"));
 builder.Services.AddScoped<IGachaBannerService, GachaBannerService>();
@@ -228,6 +236,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<SupportHub>("/hubs/support");
+app.MapHub<LobbyHub>("/hubs/lobby");
 
 using (var scope = app.Services.CreateScope())
 {

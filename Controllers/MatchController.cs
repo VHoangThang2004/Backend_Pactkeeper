@@ -16,6 +16,7 @@ public class MatchController : ControllerBase
     private readonly IMatchQueueService _queueService;
     private readonly MatchmakingService _matchmakingService;
     private readonly IActionService _actionService;
+    private readonly IUserPresenceTracker _presenceTracker;
 
     public MatchController(
         IMatchSessionService matchService,
@@ -24,7 +25,8 @@ public class MatchController : ControllerBase
         IMatchHistoryService historyService,
         IMatchQueueService queueService,
         MatchmakingService matchmakingService,
-        IActionService actionService)
+        IActionService actionService,
+        IUserPresenceTracker presenceTracker)
     {
         _matchService = matchService;
         _loadoutService = loadoutService;
@@ -33,6 +35,7 @@ public class MatchController : ControllerBase
         _queueService = queueService;
         _matchmakingService = matchmakingService;
         _actionService = actionService;
+        _presenceTracker = presenceTracker;
     }
 
     [HttpGet("current")]
@@ -150,10 +153,14 @@ public class MatchController : ControllerBase
                     int p1UnitsDefeated = p2Data.TotalUnits - p2Data.UnitsAlive;
                     int p2UnitsDefeated = p1Data.TotalUnits - p1Data.UnitsAlive;
 
-                    int p1Gems = (p1UnitsDefeated + p1Data.UnitsAlive) * 10;
-                    int p2Gems = (p2UnitsDefeated + p2Data.UnitsAlive) * 10;
-                    await _profileService.AddGemsAsync(match.Player1Id, p1Gems);
-                    await _profileService.AddGemsAsync(match.Player2Id, p2Gems);
+                    // Only award gems in standard pvp mode
+                    if (match.Mode == "pvp")
+                    {
+                        int p1Gems = (p1UnitsDefeated + p1Data.UnitsAlive) * 10;
+                        int p2Gems = (p2UnitsDefeated + p2Data.UnitsAlive) * 10;
+                        await _profileService.AddGemsAsync(match.Player1Id, p1Gems);
+                        await _profileService.AddGemsAsync(match.Player2Id, p2Gems);
+                    }
 
                     player1Id = match.Player1Id;
                     player2Id = match.Player2Id;
@@ -180,11 +187,14 @@ public class MatchController : ControllerBase
 
             var history = await _historyService.ArchiveAsync(match);
 
-            if (player1Id != null && facts1 != null && facts2 != null)
+            // Only log quest/reward actions in standard pvp mode
+            if (match.Mode == "pvp" && player1Id != null && facts1 != null && facts2 != null)
             {
                 await _actionService.LogActionAsync(player1Id, "MatchResult", history.Id, facts1);
                 await _actionService.LogActionAsync(player2Id!, "MatchResult", history.Id, facts2);
             }
+            _presenceTracker.SetInMatch(match.Player1Id, false);
+            _presenceTracker.SetInMatch(match.Player2Id, false);
             await _matchService.DeleteAsync(matchId);
             await _queueService.RemoveByPlayerIdAsync(match.Player1Id);
             await _queueService.RemoveByPlayerIdAsync(match.Player2Id);

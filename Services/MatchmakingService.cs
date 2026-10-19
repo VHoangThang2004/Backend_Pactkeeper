@@ -146,6 +146,48 @@ public class MatchmakingService : BackgroundService
     }
 
     // -------------------------------------------------------
+    // Friendly Match — called on-demand from LobbyHub / FriendsController
+    // -------------------------------------------------------
+
+    public async Task<MatchSession?> CreateFriendlyMatchAsync(
+        IMatchSessionService matchService,
+        string player1Id,
+        string player2Id)
+    {
+        int port = GetNextAvailablePort();
+        if (port == -1)
+        {
+            Console.WriteLine("[Matchmaking] No available ports for friendly match.");
+            return null;
+        }
+
+        var match = await matchService.CreateMatchAsync(
+            player1Id: player1Id,
+            player2Id: player2Id,
+            serverIp: _serverConfig.ServerIp,
+            port: port,
+            mode: "friendly",
+            mapId: "MD_PVP_001"
+        );
+
+        int processId = SpawnServer(match.MatchId, port, "friendly", chapterId: 0, sceneId: 0);
+
+        if (processId <= 0)
+        {
+            Console.WriteLine($"[Matchmaking] Failed to spawn server for friendly match {match.MatchId}");
+            await matchService.DeleteAsync(match.MatchId);
+            ReleasePort(port);
+            return null;
+        }
+
+        await matchService.UpdateProcessIdAsync(match.MatchId, processId);
+
+        Console.WriteLine($"[Matchmaking] Friendly match {match.MatchId} created " +
+                          $"{player1Id} vs {player2Id} on port {port} PID={processId}");
+        return match;
+    }
+
+    // -------------------------------------------------------
     // Shared Spawn Logic
     // -------------------------------------------------------
 

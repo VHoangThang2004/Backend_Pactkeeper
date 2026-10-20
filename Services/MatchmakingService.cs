@@ -38,6 +38,44 @@ public class MatchmakingService : BackgroundService
         Console.WriteLine($"[Matchmaking] Released port {port}");
     }
 
+    // Kills a headless match server process if it is still running.
+    // Verifies the process name matches the Unity server exe so a recycled PID
+    // (e.g. after a backend restart) never kills an unrelated process.
+    // Waits for exit so the UDP port is really free before it is reused.
+    public bool TryKillServerProcess(int processId)
+    {
+        if (processId <= 0) return false;
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(processId);
+            if (process.HasExited) return false;
+
+            var expectedName = Path.GetFileNameWithoutExtension(_serverConfig.UnityServerExePath);
+            if (!string.IsNullOrEmpty(expectedName) &&
+                !string.Equals(process.ProcessName, expectedName, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"[Matchmaking] PID {processId} is '{process.ProcessName}', " +
+                                  $"not '{expectedName}' — skip kill.");
+                return false;
+            }
+
+            process.Kill();
+            process.WaitForExit(5000);
+            Console.WriteLine($"[Matchmaking] Killed server process {processId}");
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            // Process no longer running
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Matchmaking] Failed to kill process {processId}: {ex.Message}");
+            return false;
+        }
+    }
+    
     // -------------------------------------------------------
     // PvP Background Loop
     // -------------------------------------------------------

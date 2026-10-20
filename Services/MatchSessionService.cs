@@ -63,6 +63,23 @@ public class MatchSessionService : IMatchSessionService
         if (match == null) return;
         await _repository.DeleteAsync(match.Id);
     }
+
+    public async Task TerminateMatchAsync(MatchSession match, string reason)
+    {
+        _matchmakingService.TryKillServerProcess(match.ProcessId);
+        await _repository.DeleteAsync(match.Id);
+
+        // Release the port even if the process was already dead,
+        // unless another live match is (re)using it.
+        var portInUse = await _repository.GetByFilterAsync(m =>
+            m.ServerPort == match.ServerPort &&
+            (m.Status == "pending" || m.Status == "active"));
+        if (portInUse == null)
+            _matchmakingService.ReleasePort(match.ServerPort);
+
+        Console.WriteLine($"[Match] Terminated match {match.MatchId} mode={match.Mode} " +
+                          $"port={match.ServerPort} PID={match.ProcessId} reason={reason}");
+    }
     public async Task EndAllMatchesAsync()
     {
         var active = await _repository.GetAllAsync();

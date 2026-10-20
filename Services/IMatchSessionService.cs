@@ -14,4 +14,6 @@ public interface IMatchSessionService
     Task UpdateProcessIdAsync(string matchId, int processId);
     Task DeleteAsync(string matchId);
     Task EndAllMatchesAsync();
+    Task TerminateMatchAsync(MatchSession match, string reason);
+
 }

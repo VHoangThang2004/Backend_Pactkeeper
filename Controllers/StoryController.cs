@@ -177,6 +177,11 @@ public class StoryController : ControllerBase
     // POST /api/story/match
     // No body. Spawns a battle server for the current battle scene.
     // Rejected if current scene is not a Battle or already completed.
+    // Story/PvE battles are NOT resumable: the plot config (PlotSequencer) only lives
+    // in the Unity client and always restarts from node 0 when the scene is loaded.
+    // Reconnecting to an old server would restore stale unit positions / instant /
+    // used skills that no longer match the plot nodes. So any leftover story match
+    // for this player is terminated and a fresh server is spawned for the scene.
     // -------------------------------------------------------
     [HttpPost("match")]
     [Authorize(Roles = "Player")]
@@ -184,12 +189,6 @@ public class StoryController : ControllerBase
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
         if (playerId == null) return Unauthorized();
-
-        // Return existing active story match
-        var existing = await _matchService.GetActiveMatchByPlayerIdAsync(playerId);
-        if (existing != null)
-            return Ok(new StoryMatchResponseDto(
-                existing.MatchId, existing.ServerIp, existing.ServerPort));
 
         var current = await _storyService.GetCurrentAsync(playerId);
 
@@ -208,6 +207,18 @@ public class StoryController : ControllerBase
         if (scene.Type != SceneType.Battle)
             return BadRequest("Current scene is not a battle.");
 
+        // A live PvP / friendly match must not be killed from the story flow
+        var existing = await _matchService.GetActiveMatchByPlayerIdAsync(playerId);
+        if (existing != null && existing.Mode != "story")
+            return Conflict("Player is already in an ongoing non-story match.");
+
+        // Discard every stale story match → scene restarts from a clean state
+        var killed = await TerminateStoryMatchesAsync(playerId,
+            $"restart C{current.ChapterId}_S{current.SceneId}");
+        if (killed > 0)
+            Console.WriteLine($"[Story] Discarded {killed} stale story match(es) for {playerId} " +
+                              $"— restarting C{current.ChapterId}_S{current.SceneId} fresh.");
+
         var match = await _matchmakingService.CreateStoryMatchAsync(
             _matchService, playerId, current.ChapterId, current.SceneId);
 
@@ -215,6 +226,36 @@ public class StoryController : ControllerBase
             return StatusCode(503, "No server ports available.");
 
         return Ok(new StoryMatchResponseDto(match.MatchId, match.ServerIp, match.ServerPort));
+    }
+
+    // -------------------------------------------------------
+    // POST /api/story/match/abandon
+    // No body. Client calls this when the player leaves a story battle scene.
+    // Kills the story server so nothing (units, instant, skills) survives the exit.
+    // Story progress itself is untouched → the same scene restarts next time.
+    // -------------------------------------------------------
+    [HttpPost("match/abandon")]
+    [Authorize(Roles = "Player")]
+    public async Task<ActionResult> AbandonStoryMatch()
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var killed = await TerminateStoryMatchesAsync(playerId, "player left story scene");
+        return Ok(new { terminated = killed });
+    }
+
+    private async Task<int> TerminateStoryMatchesAsync(string playerId, string reason)
+    {
+        var all = await _matchService.GetAllByPlayerIdAsync(playerId);
+        var stale = all.Where(m => m.Mode == "story" &&
+                                   (m.Status == "pending" || m.Status == "active"))
+                       .ToList();
+
+        foreach (var m in stale)
+            await _matchService.TerminateMatchAsync(m, reason);
+
+        return stale.Count;
     }
 
     // -------------------------------------------------------

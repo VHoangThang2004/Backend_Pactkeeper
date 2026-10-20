@@ -57,6 +57,7 @@ public class MatchSessionService : IMatchSessionService
         return await _repository.GetAllByFilterAsync(m =>
             m.Player1Id == playerId || m.Player2Id == playerId);
     }
+    public Task<List<MatchSession>> GetAllAsync() => _repository.GetAllAsync();
     public async Task DeleteAsync(string matchId)
     {
         var match = await GetByMatchIdAsync(matchId);

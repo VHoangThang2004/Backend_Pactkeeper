@@ -1,7 +1,10 @@
 using GameInventoryApi.DTOs;
+using GameInventoryApi.Models;
 using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using System.Text;
 
 namespace GameInventoryApi.Controllers;
 
@@ -17,6 +20,7 @@ public class MatchController : ControllerBase
     private readonly MatchmakingService _matchmakingService;
     private readonly IActionService _actionService;
     private readonly IUserPresenceTracker _presenceTracker;
+    private readonly ServerConfig _serverConfig;
 
     public MatchController(
         IMatchSessionService matchService,
@@ -26,7 +30,8 @@ public class MatchController : ControllerBase
         IMatchQueueService queueService,
         MatchmakingService matchmakingService,
         IActionService actionService,
-        IUserPresenceTracker presenceTracker)
+        IUserPresenceTracker presenceTracker,
+        IOptions<ServerConfig> serverConfig)
     {
         _matchService = matchService;
         _loadoutService = loadoutService;
@@ -36,6 +41,7 @@ public class MatchController : ControllerBase
         _matchmakingService = matchmakingService;
         _actionService = actionService;
         _presenceTracker = presenceTracker;
+        _serverConfig = serverConfig.Value;
     }
 
     [HttpGet("current")]
@@ -114,9 +120,30 @@ public class MatchController : ControllerBase
     }
 
     [HttpGet("history")]
-    [Authorize(Roles = "Player")]
+    [Authorize(Roles = "Player,Admin")]
     public async Task<ActionResult<List<MatchSessionDto>>> GetMatchHistory()
     {
+        if (User.IsInRole("Admin"))
+        {
+            var activeMatches = await _matchService.GetAllAsync();
+            var historyMatches = await _historyService.GetAllAsync();
+
+            var list = new List<MatchSessionDto>();
+            if (activeMatches != null)
+            {
+                list.AddRange(activeMatches.Select(m => new MatchSessionDto(
+                    m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
+                )));
+            }
+            if (historyMatches != null)
+            {
+                list.AddRange(historyMatches.Select(m => new MatchSessionDto(
+                    m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
+                )));
+            }
+            return Ok(list);
+        }
+
         var playerId = User.FindFirst("PlayerId")?.Value;
         if (playerId == null) return Unauthorized();
 
@@ -124,6 +151,114 @@ public class MatchController : ControllerBase
         return Ok(matches.Select(m => new MatchSessionDto(
             m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
         )).ToList());
+    }
+
+    [HttpGet("log-files")]
+    [Authorize(Roles = "Admin,Server")]
+    public ActionResult<List<MatchLogFileInfo>> GetAvailableLogFiles()
+    {
+        var localPath = _serverConfig.LocalPath;
+        if (string.IsNullOrWhiteSpace(localPath) || !Directory.Exists(localPath))
+        {
+            return Ok(new List<MatchLogFileInfo>());
+        }
+
+        try
+        {
+            var dir = new DirectoryInfo(localPath);
+            var files = dir.GetFiles("*.log")
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .Take(50)
+                .Select(f => new MatchLogFileInfo(
+                    MatchId: Path.GetFileNameWithoutExtension(f.Name),
+                    FileName: f.Name,
+                    FileSizeBytes: f.Length,
+                    LastModifiedUtc: f.LastWriteTimeUtc,
+                    CreatedAtUtc: f.CreationTimeUtc
+                ))
+                .ToList();
+
+            return Ok(files);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = $"Error listing log files: {ex.Message}" });
+        }
+    }
+
+    [HttpGet("{matchId}/logs")]
+    [Authorize(Roles = "Admin,Server")]
+    public async Task<ActionResult<MatchLogResponseDto>> GetMatchLogs(string matchId)
+    {
+        if (string.IsNullOrWhiteSpace(matchId))
+        {
+            return BadRequest(new { message = "matchId is required." });
+        }
+
+        var cleanMatchId = matchId.Trim();
+        // Prevent Path Traversal
+        if (cleanMatchId.Contains("..") || cleanMatchId.Contains('/') || cleanMatchId.Contains('\\') ||
+            cleanMatchId.Any(c => Path.GetInvalidFileNameChars().Contains(c)))
+        {
+            return BadRequest(new { message = "Invalid matchId character format." });
+        }
+
+        var localPath = _serverConfig.LocalPath;
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "ServerConfig.LocalPath is not configured on server." });
+        }
+
+        var fileName = $"{cleanMatchId}.log";
+        var fullPath = Path.GetFullPath(Path.Combine(localPath, fileName));
+        var canonicalBasePath = Path.GetFullPath(localPath);
+
+        if (!fullPath.StartsWith(canonicalBasePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "Path traversal detected." });
+        }
+
+        if (!System.IO.File.Exists(fullPath))
+        {
+            var session = await _matchService.GetByMatchIdAsync(cleanMatchId);
+            var history = session == null ? await _historyService.GetByMatchIdAsync(cleanMatchId) : null;
+            var currentStatus = session?.Status ?? history?.Status ?? "not_found";
+
+            return NotFound(new {
+                message = $"No server log file found for match '{cleanMatchId}'.",
+                matchId = cleanMatchId,
+                status = currentStatus,
+                logPath = fileName
+            });
+        }
+
+        try
+        {
+            string content;
+            using (var fs = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var sr = new StreamReader(fs, Encoding.UTF8))
+            {
+                content = await sr.ReadToEndAsync();
+            }
+
+            var totalLines = content.Split('\n').Length;
+            var session = await _matchService.GetByMatchIdAsync(cleanMatchId);
+            var history = session == null ? await _historyService.GetByMatchIdAsync(cleanMatchId) : null;
+            var status = session?.Status ?? history?.Status ?? "active";
+
+            return Ok(new MatchLogResponseDto(
+                MatchId: cleanMatchId,
+                Logs: content,
+                LogPath: fileName,
+                TotalLines: totalLines,
+                Status: status,
+                RetrievedAt: DateTime.UtcNow
+            ));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = $"Error reading log file: {ex.Message}" });
+        }
     }
 
     [HttpPatch("{matchId}/status")]

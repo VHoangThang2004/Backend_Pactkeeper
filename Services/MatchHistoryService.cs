@@ -35,4 +35,6 @@ public class MatchHistoryService : IMatchHistoryService
 
     public Task<MatchHistory?> GetByMatchIdAsync(string matchId)
         => _repository.GetByFilterAsync(h => h.MatchId == matchId);
+
+    public Task<List<MatchHistory>> GetAllAsync() => _repository.GetAllAsync();
 }

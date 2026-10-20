@@ -50,3 +50,22 @@ public record MatchHistoryDto(
     MatchResultDataDto? Result,
     DateTime CompletedAt
 );
+
+public record MatchLogResponseDto(
+    string MatchId,
+    string Logs,
+    string? LogPath = null,
+    int TotalLines = 0,
+    string? Status = null,
+    DateTime? RetrievedAt = null
+);
+
+public record MatchLogFileInfo(
+    string MatchId,
+    string FileName,
+    long FileSizeBytes,
+    DateTime LastModifiedUtc,
+    DateTime CreatedAtUtc
+);
+
+

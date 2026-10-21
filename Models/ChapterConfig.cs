@@ -23,6 +23,7 @@ public class SceneConfig
     public bool AutoAdvance { get; set; } = false;
 
     public string Description { get; set; } = string.Empty;
+    public string MapId { get; set; } = string.Empty;
 }
 
 public class ChapterConfig

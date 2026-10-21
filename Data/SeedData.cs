@@ -42,6 +42,7 @@ public static class SeedData
                         SceneId = 1,
                         Type = SceneType.Battle,
                         Description = "Tutorial battle — learn movement and skills",
+                        MapId = "MD_PVE_C0S1",
                         AutoResume=true,
                         AutoAdvance=true
                     },
@@ -50,6 +51,7 @@ public static class SeedData
                         SceneId = 2,
                         Type = SceneType.Battle,
                         Description = "Tutorial battle 2 — delayed weapon",
+                        MapId = "MD_PVE_C0S2",
                         AutoResume=true,
                         AutoAdvance=true
                     },
@@ -58,6 +60,7 @@ public static class SeedData
                         SceneId = 3,
                         Type = SceneType.Battle,
                         Description = "Tutorial battle 3 — synergy combo",
+                        MapId = "MD_PVE_C0S3",
                         AutoResume=true,
                         AutoAdvance=true
                     },

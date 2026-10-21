@@ -220,7 +220,7 @@ public class StoryController : ControllerBase
                               $"— restarting C{current.ChapterId}_S{current.SceneId} fresh.");
 
         var match = await _matchmakingService.CreateStoryMatchAsync(
-            _matchService, playerId, current.ChapterId, current.SceneId);
+            _matchService, playerId, current.ChapterId, current.SceneId, scene.MapId);
 
         if (match == null)
             return StatusCode(503, "No server ports available.");

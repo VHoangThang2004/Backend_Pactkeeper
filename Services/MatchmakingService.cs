@@ -146,7 +146,8 @@ public class MatchmakingService : BackgroundService
         IMatchSessionService matchService,
         string playerId,
         int chapterId,
-        int sceneId)
+        int sceneId,
+        string? sceneMapId = null)
     {
         int port = GetNextAvailablePort();
         if (port == -1)
@@ -155,8 +156,10 @@ public class MatchmakingService : BackgroundService
             return null;
         }
 
-        var mapId = GetMapIdForScene(chapterId, sceneId);
-
+        var mapId = !string.IsNullOrEmpty(sceneMapId)
+            ? sceneMapId
+            : GetMapIdForScene(chapterId, sceneId);
+            
         var match = await matchService.CreateMatchAsync(
             player1Id: playerId,
             player2Id: "AI",

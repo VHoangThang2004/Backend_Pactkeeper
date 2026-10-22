@@ -16,14 +16,19 @@ public class MatchQueueService : IMatchQueueService
     public Task<MatchQueueEntry?> GetByPlayerIdAsync(string playerId)
         => _repository.GetByFilterAsync(e => e.PlayerId == playerId);
 
-    public async Task JoinQueueAsync(string playerId)
+    public async Task JoinQueueAsync(string playerId, string mode = "pvp", int rating = 0)
     {
         if(_serverState.MatchmakingBlocked) return;
         var existing = await GetByPlayerIdAsync(playerId);
         if (existing != null) return; // already in queue
 
-        await _repository.CreateAsync(new MatchQueueEntry { PlayerId = playerId });
-        Console.WriteLine($"[Queue] Player {playerId} joined queue.");
+        await _repository.CreateAsync(new MatchQueueEntry
+        {
+            PlayerId = playerId,
+            Mode = string.IsNullOrEmpty(mode) ? "pvp" : mode,
+            Rating = rating
+        });
+        Console.WriteLine($"[Queue] Player {playerId} joined queue (mode={mode}, rating={rating}).");
     }
 
     public async Task LeaveQueueAsync(string playerId)

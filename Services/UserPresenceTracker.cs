@@ -4,8 +4,8 @@ namespace GameInventoryApi.Services;
 
 public class UserPresenceTracker : IUserPresenceTracker
 {
-    private readonly ConcurrentDictionary<string, HashSet<string>> _onlineUsers = new();
-    private readonly ConcurrentDictionary<string, bool> _inMatchUsers = new();
+    private readonly ConcurrentDictionary<string, HashSet<string>> _onlineUsers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, bool> _inMatchUsers = new(StringComparer.OrdinalIgnoreCase);
 
     public bool AddConnection(string playerId, string connectionId)
     {

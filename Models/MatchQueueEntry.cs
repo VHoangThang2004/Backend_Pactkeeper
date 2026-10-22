@@ -14,5 +14,7 @@ public class MatchQueueEntry
     public string MatchId { get; set; } = string.Empty;
     public string ServerIp { get; set; } = string.Empty;
     public int ServerPort { get; set; } = 0;
+    public string Mode { get; set; } = "pvp";
+    public int Rating { get; set; } = 0;
     public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
 }

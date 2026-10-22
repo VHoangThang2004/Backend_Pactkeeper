@@ -14,6 +14,10 @@ public class PlayerProfile
     public int Level { get; set; } = 1;
     public int Experience { get; set; } = 0;
     public int Gems { get; set; } = 0;
+    public int Rating { get; set; } = 0;
+    public int RankTier { get; set; } = 0;
+    public int RankWins { get; set; } = 0;
+    public int RankLosses { get; set; } = 0;
     public DateTime LastLogin { get; set; } = DateTime.UtcNow;
 
     public List<OwnedUnit> OwnedUnits { get; set; } = new();

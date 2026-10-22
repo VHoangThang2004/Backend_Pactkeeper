@@ -75,7 +75,7 @@ public class MatchmakingService : BackgroundService
             return false;
         }
     }
-    
+
     // -------------------------------------------------------
     // PvP Background Loop
     // -------------------------------------------------------
@@ -99,35 +99,52 @@ public class MatchmakingService : BackgroundService
         var waiting = await queueService.GetWaitingPlayersAsync();
         if (waiting.Count < 2)
         {
-            Console.WriteLine($"[Matchmaking] Queue is not enough, cannot match...");
             return;
         }
 
-        var player1 = waiting[0];
-        var player2 = waiting[1];
+        var pvpWaiting = waiting.Where(e => e.Mode != "ranked").ToList();
+        var rankedWaiting = waiting.Where(e => e.Mode == "ranked").ToList();
+
+        if (pvpWaiting.Count >= 2)
+        {
+            await TryMatchPvpPlayers(queueService, matchService, pvpWaiting);
+        }
+
+        if (rankedWaiting.Count >= 2)
+        {
+            await TryMatchRankedPlayers(queueService, matchService, rankedWaiting);
+        }
+    }
+
+    private async Task TryMatchPvpPlayers(
+        IMatchQueueService queueService,
+        IMatchSessionService matchService,
+        List<MatchQueueEntry> pvpWaiting)
+    {
+        var player1 = pvpWaiting[0];
+        var player2 = pvpWaiting[1];
 
         var p1Ongoing = await matchService.GetActiveMatchByPlayerIdAsync(player1.PlayerId);
         var p2Ongoing = await matchService.GetActiveMatchByPlayerIdAsync(player2.PlayerId);
         if (p1Ongoing != null || p2Ongoing != null)
         {
-            Console.WriteLine($"[Matchmaking] Skipping pair — player already in an ongoing match.");
+            Console.WriteLine("[Matchmaking] Skipping PvP pair — player already in an ongoing match.");
             return;
         }
-
-        Console.WriteLine($"[Matchmaking] Pairing {player1.PlayerId} vs {player2.PlayerId}");
 
         int port = GetNextAvailablePort();
         if (port == -1)
         {
-            Console.WriteLine("[Matchmaking] No available ports — cannot start match.");
+            Console.WriteLine("[Matchmaking] No available ports for PvP match.");
             return;
         }
+
+        Console.WriteLine($"[Matchmaking] Pairing PvP: {player1.PlayerId} vs {player2.PlayerId}");
 
         var match = await matchService.CreateMatchAsync(
             player1.PlayerId, player2.PlayerId,
             _serverConfig.ServerIp, port, "pvp", "MD_PVP_001");
 
-        // PvP has no chapter/scene — pass 0/0, server ignores them in pvp mode
         int processId = SpawnServer(match.MatchId, port, "pvp", chapterId: 0, sceneId: 0);
         if (processId > 0)
             await matchService.UpdateProcessIdAsync(match.MatchId, processId);
@@ -135,7 +152,73 @@ public class MatchmakingService : BackgroundService
         await queueService.UpdateMatchedAsync(player1.PlayerId, match.MatchId, _serverConfig.ServerIp, port);
         await queueService.UpdateMatchedAsync(player2.PlayerId, match.MatchId, _serverConfig.ServerIp, port);
 
-        Console.WriteLine($"[Matchmaking] Match {match.MatchId} created, server PID={processId}");
+        Console.WriteLine($"[Matchmaking] PvP Match {match.MatchId} created, server PID={processId}");
+    }
+
+    private async Task TryMatchRankedPlayers(
+        IMatchQueueService queueService,
+        IMatchSessionService matchService,
+        List<MatchQueueEntry> rankedWaiting)
+    {
+        // Order by oldest in queue first
+        var sorted = rankedWaiting.OrderBy(e => e.JoinedAt).ToList();
+
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            var p1 = sorted[i];
+            int waitSeconds = Math.Max(0, (int)(DateTime.UtcNow - p1.JoinedAt).TotalSeconds);
+            // Window expands: base 100 LP gap, +50 LP for every 10 seconds waiting
+            int allowedGap = 100 + (waitSeconds / 10) * 50;
+
+            // Find closest candidate within allowed gap
+            MatchQueueEntry? bestOpponent = null;
+            int smallestDiff = int.MaxValue;
+
+            for (int j = i + 1; j < sorted.Count; j++)
+            {
+                var p2 = sorted[j];
+                int diff = Math.Abs(p1.Rating - p2.Rating);
+                if (diff <= allowedGap && diff < smallestDiff)
+                {
+                    smallestDiff = diff;
+                    bestOpponent = p2;
+                }
+            }
+
+            if (bestOpponent != null)
+            {
+                var p1Ongoing = await matchService.GetActiveMatchByPlayerIdAsync(p1.PlayerId);
+                var p2Ongoing = await matchService.GetActiveMatchByPlayerIdAsync(bestOpponent.PlayerId);
+                if (p1Ongoing != null || p2Ongoing != null)
+                {
+                    Console.WriteLine("[Matchmaking] Skipping Ranked pair — player already in an ongoing match.");
+                    continue;
+                }
+
+                int port = GetNextAvailablePort();
+                if (port == -1)
+                {
+                    Console.WriteLine("[Matchmaking] No available ports for Ranked match.");
+                    return;
+                }
+
+                Console.WriteLine($"[Matchmaking] Pairing Ranked: {p1.PlayerId} (Rating {p1.Rating}) vs {bestOpponent.PlayerId} (Rating {bestOpponent.Rating}) [diff={smallestDiff}]");
+
+                var match = await matchService.CreateMatchAsync(
+                    p1.PlayerId, bestOpponent.PlayerId,
+                    _serverConfig.ServerIp, port, "ranked", "MD_PVP_001");
+
+                int processId = SpawnServer(match.MatchId, port, "ranked", chapterId: 0, sceneId: 0);
+                if (processId > 0)
+                    await matchService.UpdateProcessIdAsync(match.MatchId, processId);
+
+                await queueService.UpdateMatchedAsync(p1.PlayerId, match.MatchId, _serverConfig.ServerIp, port);
+                await queueService.UpdateMatchedAsync(bestOpponent.PlayerId, match.MatchId, _serverConfig.ServerIp, port);
+
+                Console.WriteLine($"[Matchmaking] Ranked Match {match.MatchId} created, server PID={processId}");
+                break; // Handled one match this cycle
+            }
+        }
     }
 
     // -------------------------------------------------------
@@ -159,7 +242,7 @@ public class MatchmakingService : BackgroundService
         var mapId = !string.IsNullOrEmpty(sceneMapId)
             ? sceneMapId
             : GetMapIdForScene(chapterId, sceneId);
-            
+
         var match = await matchService.CreateMatchAsync(
             player1Id: playerId,
             player2Id: "AI",

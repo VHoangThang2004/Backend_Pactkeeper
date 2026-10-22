@@ -27,4 +27,7 @@ public class MongoRepository<T> : IMongoRepository<T> where T : class
 
     public async Task<List<T>> GetAllByFilterAsync(Expression<Func<T, bool>> filter) =>
         await _collection.Find(filter).ToListAsync();
+
+    public async Task<List<T>> GetTopAsync(Expression<Func<T, bool>> filter, Expression<Func<T, object>> sortByDescending, int limit) =>
+        await _collection.Find(filter).Sort(Builders<T>.Sort.Descending(sortByDescending)).Limit(limit).ToListAsync();
 }

@@ -20,6 +20,7 @@ public class MatchController : ControllerBase
     private readonly MatchmakingService _matchmakingService;
     private readonly IActionService _actionService;
     private readonly IUserPresenceTracker _presenceTracker;
+    private readonly IRankingService _rankingService;
     private readonly ServerConfig _serverConfig;
 
     public MatchController(
@@ -31,6 +32,7 @@ public class MatchController : ControllerBase
         MatchmakingService matchmakingService,
         IActionService actionService,
         IUserPresenceTracker presenceTracker,
+        IRankingService rankingService,
         IOptions<ServerConfig> serverConfig)
     {
         _matchService = matchService;
@@ -41,6 +43,7 @@ public class MatchController : ControllerBase
         _matchmakingService = matchmakingService;
         _actionService = actionService;
         _presenceTracker = presenceTracker;
+        _rankingService = rankingService;
         _serverConfig = serverConfig.Value;
     }
 
@@ -288,8 +291,8 @@ public class MatchController : ControllerBase
                     int p1UnitsDefeated = p2Data.TotalUnits - p2Data.UnitsAlive;
                     int p2UnitsDefeated = p1Data.TotalUnits - p1Data.UnitsAlive;
 
-                    // Only award gems in standard pvp mode
-                    if (match.Mode == "pvp")
+                    // Award gems in pvp and ranked modes
+                    if (match.Mode == "pvp" || match.Mode == "ranked")
                     {
                         int p1Gems = (p1UnitsDefeated + p1Data.UnitsAlive) * 10;
                         int p2Gems = (p2UnitsDefeated + p2Data.UnitsAlive) * 10;
@@ -297,33 +300,61 @@ public class MatchController : ControllerBase
                         await _profileService.AddGemsAsync(match.Player2Id, p2Gems);
                     }
 
+                    // Update ratings and rank tiers for ranked matches
+                    if (match.Mode == "ranked" && !string.IsNullOrEmpty(dto.Result?.WinnerId))
+                    {
+                        var p1Profile = await _profileService.GetByFilterAsync(p => p.PlayerId == match.Player1Id);
+                        var p2Profile = await _profileService.GetByFilterAsync(p => p.PlayerId == match.Player2Id);
+
+                        if (p1Profile != null && p2Profile != null)
+                        {
+                            bool p1Won = dto.Result.WinnerId == match.Player1Id;
+                            var winnerProfile = p1Won ? p1Profile : p2Profile;
+                            var loserProfile = p1Won ? p2Profile : p1Profile;
+
+                            var (winnerGain, loserLoss) = _rankingService.CalculateRatingDelta(winnerProfile.Rating, loserProfile.Rating);
+
+                            winnerProfile.Rating += winnerGain;
+                            winnerProfile.RankTier = _rankingService.CalculateRankTier(winnerProfile.Rating);
+                            winnerProfile.RankWins++;
+                            await _profileService.UpdateAsync(winnerProfile.Id, winnerProfile);
+
+                            loserProfile.Rating = Math.Max(0, loserProfile.Rating - loserLoss);
+                            loserProfile.RankTier = _rankingService.CalculateRankTier(loserProfile.Rating);
+                            loserProfile.RankLosses++;
+                            await _profileService.UpdateAsync(loserProfile.Id, loserProfile);
+
+                            Console.WriteLine($"[Match] Ranked match {matchId} rating update: {winnerProfile.PlayerId} (+{winnerGain} -> {winnerProfile.Rating}), {loserProfile.PlayerId} (-{loserLoss} -> {loserProfile.Rating})");
+                        }
+                    }
+
                     player1Id = match.Player1Id;
                     player2Id = match.Player2Id;
                     facts1 = new Dictionary<string, object>
                     {
-                        ["won"] = dto.Result.WinnerId == match.Player1Id,
+                        ["won"] = dto.Result?.WinnerId == match.Player1Id,
                         ["unitsAlive"] = p1Data.UnitsAlive,
                         ["totalUnits"] = p1Data.TotalUnits,
                         ["unitsDefeated"] = p1UnitsDefeated,
-                        ["durationSeconds"] = dto.Result.DurationSeconds,
-                        ["instants"] = dto.Result.TotalInstants,
+                        ["durationSeconds"] = dto.Result?.DurationSeconds ?? 0,
+                        ["instants"] = dto.Result?.TotalInstants ?? 0,
                     };
                     facts2 = new Dictionary<string, object>
                     {
-                        ["won"] = dto.Result.WinnerId == match.Player2Id,
+                        ["won"] = dto.Result?.WinnerId == match.Player2Id,
                         ["unitsAlive"] = p2Data.UnitsAlive,
                         ["totalUnits"] = p2Data.TotalUnits,
                         ["unitsDefeated"] = p2UnitsDefeated,
-                        ["durationSeconds"] = dto.Result.DurationSeconds,
-                        ["instants"] = dto.Result.TotalInstants,
+                        ["durationSeconds"] = dto.Result?.DurationSeconds ?? 0,
+                        ["instants"] = dto.Result?.TotalInstants ?? 0,
                     };
                 }
             }
 
             var history = await _historyService.ArchiveAsync(match);
 
-            // Only log quest/reward actions in standard pvp mode
-            if (match.Mode == "pvp" && player1Id != null && facts1 != null && facts2 != null)
+            // Log quest/reward actions in pvp and ranked modes
+            if ((match.Mode == "pvp" || match.Mode == "ranked") && player1Id != null && facts1 != null && facts2 != null)
             {
                 await _actionService.LogActionAsync(player1Id, "MatchResult", history.Id, facts1);
                 await _actionService.LogActionAsync(player2Id!, "MatchResult", history.Id, facts2);

@@ -11,4 +11,5 @@ public interface IMongoRepository<T> where T : class
     Task UpdateAsync(string id, T entity);
     Task DeleteAsync(string id);
     Task<List<T>> GetAllByFilterAsync(Expression<Func<T, bool>> filter);
+    Task<List<T>> GetTopAsync(Expression<Func<T, bool>> filter, Expression<Func<T, object>> sortByDescending, int limit);
 }

@@ -106,6 +106,7 @@ builder.Services.AddScoped<ITeamLoadoutService, TeamLoadoutService>();
 builder.Services.AddScoped<IMatchSessionService, MatchSessionService>();
 builder.Services.AddScoped<IMatchHistoryService, MatchHistoryService>();
 builder.Services.AddScoped<IPlayerProfileService, PlayerProfileService>();
+builder.Services.AddScoped<IRankingService, RankingService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<ITopUpPackService, TopUpPackService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();

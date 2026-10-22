@@ -38,20 +38,26 @@ public class FriendsController : ControllerBase
         _lobbyHub = lobbyHub;
     }
 
+    private string? GetPlayerId() =>
+        User.FindFirst("PlayerId")?.Value
+        ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User.FindFirst("sub")?.Value;
+
     [HttpGet]
     public async Task<ActionResult<List<FriendProfileDto>>> GetFriends()
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
+        var playerId = GetPlayerId();
         if (playerId == null) return Unauthorized();
 
         var friends = await _friendshipService.GetFriendsWithPresenceAsync(playerId);
+        Console.WriteLine($"[FriendsController] GetFriends for {playerId}: found {friends.Count} friends. Online count: {friends.Count(f => f.IsOnline)}");
         return Ok(friends);
     }
 
     [HttpGet("requests")]
     public async Task<ActionResult<List<FriendRequestDto>>> GetPendingRequests()
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
+        var playerId = GetPlayerId();
         if (playerId == null) return Unauthorized();
 
         var requests = await _friendshipService.GetPendingRequestsAsync(playerId);
@@ -61,20 +67,46 @@ public class FriendsController : ControllerBase
     [HttpPost("request")]
     public async Task<ActionResult> SendRequest([FromBody] SendFriendRequestDto dto)
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
+        var playerId = GetPlayerId();
         if (playerId == null) return Unauthorized();
 
-        if (string.IsNullOrWhiteSpace(dto.TargetUsernameOrId))
+        if (dto == null || string.IsNullOrWhiteSpace(dto.TargetUsernameOrId))
             return BadRequest(new { message = "target_required" });
 
+        Console.WriteLine($"[FriendsController] Player {playerId} sending request to '{dto.TargetUsernameOrId}'");
         var (success, message, friendship) = await _friendshipService.SendFriendRequestAsync(
             playerId, dto.TargetUsernameOrId.Trim());
+
+        Console.WriteLine($"[FriendsController] Result: success={success}, message={message}");
 
         if (!success)
             return BadRequest(new { message });
 
-        // If target is currently online, notify them via SignalR
-        if (friendship != null && _presenceTracker.IsOnline(friendship.FriendId))
+        // If mutual request was auto-accepted, notify both players immediately
+        if (friendship != null && message == "request_accepted")
+        {
+            await _lobbyHub.Clients.Group(friendship.PlayerId).SendAsync("FriendRequestAccepted", new { friendPlayerId = friendship.FriendId });
+            await _lobbyHub.Clients.Group(friendship.FriendId).SendAsync("FriendRequestAccepted", new { friendPlayerId = friendship.PlayerId });
+
+            if (_presenceTracker.IsOnline(friendship.PlayerId))
+            {
+                await _lobbyHub.Clients.Group(friendship.FriendId).SendAsync("OnFriendPresenceChanged", new FriendPresenceUpdateDto(
+                    friendship.PlayerId,
+                    IsOnline: true,
+                    Status: _presenceTracker.GetStatus(friendship.PlayerId)
+                ));
+            }
+            if (_presenceTracker.IsOnline(friendship.FriendId))
+            {
+                await _lobbyHub.Clients.Group(friendship.PlayerId).SendAsync("OnFriendPresenceChanged", new FriendPresenceUpdateDto(
+                    friendship.FriendId,
+                    IsOnline: true,
+                    Status: _presenceTracker.GetStatus(friendship.FriendId)
+                ));
+            }
+        }
+        // If target is currently online, notify them of incoming request via SignalR
+        else if (friendship != null && _presenceTracker.IsOnline(friendship.FriendId))
         {
             await _lobbyHub.Clients.Group(friendship.FriendId).SendAsync("ReceiveFriendRequest", new
             {
@@ -89,11 +121,46 @@ public class FriendsController : ControllerBase
     [HttpPost("requests/{requestId}/accept")]
     public async Task<ActionResult> AcceptRequest(string requestId)
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
+        var playerId = GetPlayerId();
         if (playerId == null) return Unauthorized();
 
-        var success = await _friendshipService.AcceptFriendRequestAsync(playerId, requestId);
-        if (!success) return BadRequest(new { message = "accept_failed" });
+        var (success, friendship) = await _friendshipService.AcceptFriendRequestAsync(playerId, requestId);
+        if (!success || friendship == null) return BadRequest(new { message = "accept_failed" });
+
+        var senderPlayerId = friendship.PlayerId;
+        Console.WriteLine($"[FriendsController] AcceptRequest: Player {playerId} accepted request from {senderPlayerId}");
+
+        // 1. Notify both parties that friendship has been established so their UI re-fetches
+        await _lobbyHub.Clients.Group(senderPlayerId).SendAsync("FriendRequestAccepted", new
+        {
+            friendPlayerId = playerId
+        });
+        await _lobbyHub.Clients.Group(playerId).SendAsync("FriendRequestAccepted", new
+        {
+            friendPlayerId = senderPlayerId
+        });
+
+        // 2. Broadcast online presence immediately between both newly-connected friends
+        bool playerOnline = _presenceTracker.IsOnline(playerId);
+        bool senderOnline = _presenceTracker.IsOnline(senderPlayerId);
+        Console.WriteLine($"[FriendsController] Presence states: Player({playerId})={playerOnline}, Sender({senderPlayerId})={senderOnline}");
+
+        if (playerOnline)
+        {
+            await _lobbyHub.Clients.Group(senderPlayerId).SendAsync("OnFriendPresenceChanged", new FriendPresenceUpdateDto(
+                playerId,
+                IsOnline: true,
+                Status: _presenceTracker.GetStatus(playerId)
+            ));
+        }
+        if (senderOnline)
+        {
+            await _lobbyHub.Clients.Group(playerId).SendAsync("OnFriendPresenceChanged", new FriendPresenceUpdateDto(
+                senderPlayerId,
+                IsOnline: true,
+                Status: _presenceTracker.GetStatus(senderPlayerId)
+            ));
+        }
 
         return Ok(new { message = "accepted" });
     }
@@ -101,7 +168,7 @@ public class FriendsController : ControllerBase
     [HttpPost("requests/{requestId}/decline")]
     public async Task<ActionResult> DeclineRequest(string requestId)
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
+        var playerId = GetPlayerId();
         if (playerId == null) return Unauthorized();
 
         var success = await _friendshipService.DeclineFriendRequestAsync(playerId, requestId);
@@ -113,11 +180,13 @@ public class FriendsController : ControllerBase
     [HttpDelete("{friendPlayerId}")]
     public async Task<ActionResult> RemoveFriend(string friendPlayerId)
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
+        var playerId = GetPlayerId();
         if (playerId == null) return Unauthorized();
 
         var success = await _friendshipService.RemoveFriendAsync(playerId, friendPlayerId);
         if (!success) return NotFound(new { message = "friend_not_found" });
+
+        await _lobbyHub.Clients.Group(friendPlayerId).SendAsync("FriendRemoved", playerId);
 
         return Ok(new { message = "removed" });
     }
@@ -129,7 +198,7 @@ public class FriendsController : ControllerBase
     [HttpPost("match/invite")]
     public async Task<ActionResult> SendMatchInvite([FromBody] SendMatchInviteDto dto)
     {
-        var senderId = User.FindFirst("PlayerId")?.Value;
+        var senderId = GetPlayerId();
         if (senderId == null) return Unauthorized();
 
         if (senderId == dto.TargetPlayerId)
@@ -165,7 +234,7 @@ public class FriendsController : ControllerBase
     [HttpPost("match/invite/{inviteId}/accept")]
     public async Task<ActionResult<MatchSessionJoinInfoDto>> AcceptMatchInvite(string inviteId)
     {
-        var receiverId = User.FindFirst("PlayerId")?.Value;
+        var receiverId = GetPlayerId();
         if (receiverId == null) return Unauthorized();
 
         var invite = await _inviteService.GetPendingInviteAsync(inviteId, receiverId);
@@ -207,7 +276,7 @@ public class FriendsController : ControllerBase
     [HttpPost("match/invite/{inviteId}/decline")]
     public async Task<ActionResult> DeclineMatchInvite(string inviteId)
     {
-        var receiverId = User.FindFirst("PlayerId")?.Value;
+        var receiverId = GetPlayerId();
         if (receiverId == null) return Unauthorized();
 
         var invite = await _inviteService.GetInviteByIdAsync(inviteId);
@@ -223,7 +292,7 @@ public class FriendsController : ControllerBase
     [HttpPost("match/invite/{inviteId}/cancel")]
     public async Task<ActionResult> CancelMatchInvite(string inviteId)
     {
-        var senderId = User.FindFirst("PlayerId")?.Value;
+        var senderId = GetPlayerId();
         if (senderId == null) return Unauthorized();
 
         var invite = await _inviteService.GetInviteByIdAsync(inviteId);

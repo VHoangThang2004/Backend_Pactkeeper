@@ -25,7 +25,7 @@ public static class SeedData
             new ChapterConfig
             {
                 ChapterId = 0,
-                Title = "Chapter 0 — The Covenant of Time",
+                Title = "Chapter 0 - The Covenant of Time",
                 MapId = "MD_PVE_C0S1",
                 Scenes = new List<SceneConfig>
                 {
@@ -93,7 +93,7 @@ public static class SeedData
             new ChapterConfig
             {
                 ChapterId = 1,
-                Title = "Chapter 1 — The Iron Wall",
+                Title = "Chapter 1 - The Iron Wall",
                 MapId = "MD_PVE_C1S1",
                 Scenes = new List<SceneConfig>
                 {
@@ -129,7 +129,7 @@ public static class SeedData
             new ChapterConfig
             {
                 ChapterId = 2,
-                Title = "Chapter 2 — Long Reach in the Mire",
+                Title = "Chapter 2 - Long Reach in the Mire",
                 MapId = "MD_PVE_C2S1",
                 Scenes = new List<SceneConfig>
                 {
@@ -156,7 +156,7 @@ public static class SeedData
             new ChapterConfig
             {
                 ChapterId = 3,
-                Title = "Chapter 3 — The Forest Pact",
+                Title = "Chapter 3 - The Forest Pact",
                 MapId = "MD_PVE_C3S1",
                 Scenes = new List<SceneConfig>
                 {
@@ -438,14 +438,14 @@ public static class SeedData
         var weapons = database.GetCollection<WeaponDefinition>("WeaponDefinitions");
         await weapons.InsertManyAsync(new[]
         {
-            // Tier 1 — no stat modifiers, given at register
+            // Tier 1 - no stat modifiers, given at register
             new WeaponDefinition { WeaponId = 1, Name = "Dagger",          ClassId = 1, SkillId = 2001, StatModifiers = new(), GivenAtRegister = true  },
             new WeaponDefinition { WeaponId = 2, Name = "Sword & Shield",  ClassId = 2, SkillId = 2002, StatModifiers = new(), GivenAtRegister = true  },
             new WeaponDefinition { WeaponId = 3, Name = "Axe",             ClassId = 3, SkillId = 2003, StatModifiers = new(), GivenAtRegister = true  },
             new WeaponDefinition { WeaponId = 4, Name = "CrossBow",        ClassId = 4, SkillId = 2004, StatModifiers = new(), GivenAtRegister = true  },
             new WeaponDefinition { WeaponId = 5, Name = "Holy Book",       ClassId = 5, SkillId = 2005, StatModifiers = new(), GivenAtRegister = true  },
             new WeaponDefinition { WeaponId = 6, Name = "Staff of the Druid", ClassId = 6, SkillId = 2006, StatModifiers = new(), GivenAtRegister = true  },
-            // Tier 2 — with stat modifiers, gacha only
+            // Tier 2 - with stat modifiers, gacha only
             new WeaponDefinition { WeaponId = 7,  Name = "Sharp Dagger",   ClassId = 1, SkillId = 2001, StatModifiers = new() { Speed = 5 },           GivenAtRegister = false },
             new WeaponDefinition { WeaponId = 8,  Name = "Kite Shield",    ClassId = 2, SkillId = 2002, StatModifiers = new() { MaxHP = 1 },            GivenAtRegister = false },
             new WeaponDefinition { WeaponId = 9,  Name = "War Axe",        ClassId = 3, SkillId = 2003, StatModifiers = new() { MaxHP = 1 },            GivenAtRegister = false },
@@ -460,12 +460,12 @@ public static class SeedData
         var trinkets = database.GetCollection<TrinketDefinition>("TrinketDefinitions");
         await trinkets.InsertManyAsync(new[]
         {
-            // Tier 1 — no stat modifiers
+            // Tier 1 - no stat modifiers
             new TrinketDefinition { TrinketId = 1, Name = "High Heels",    SkillId = 4001, StatModifiers = new(), GivenAtRegister = false },
             new TrinketDefinition { TrinketId = 2, Name = "Monocle",       SkillId = 4002, StatModifiers = new(), GivenAtRegister = true  },
             new TrinketDefinition { TrinketId = 3, Name = "Strong Boots",  SkillId = 4003, StatModifiers = new(), GivenAtRegister = true  },
             new TrinketDefinition { TrinketId = 4, Name = "Spyglass",      SkillId = 4004, StatModifiers = new(), GivenAtRegister = true  },
-            // Tier 2 — with stat modifiers, gacha only
+            // Tier 2 - with stat modifiers, gacha only
             new TrinketDefinition { TrinketId = 5, Name = "Steel Heels",      SkillId = 4001, StatModifiers = new() { Speed = 5 },         GivenAtRegister = false },
             new TrinketDefinition { TrinketId = 6, Name = "Jeweled Monocle",  SkillId = 4002, StatModifiers = new() { MaxSkillPoint = 1 }, GivenAtRegister = false },
             new TrinketDefinition { TrinketId = 7, Name = "Iron Boots",       SkillId = 4003, StatModifiers = new() { MaxHP = 1 },         GivenAtRegister = false },
@@ -483,7 +483,7 @@ public static class SeedData
         }
 
         // RewardTier: 1=weapons/trinkets no stat  2=weapons/trinkets with stat  3=units
-        // Weight is relative — higher = more common
+        // Weight is relative - higher = more common
 
         var standardBanner = new GachaBanner
         {
@@ -495,7 +495,7 @@ public static class SeedData
             PityThreshold = 80,
             Items =
             [
-                // Tier 3 — units (rarest); ClassId must be in UnitDefinition.ClassIds
+                // Tier 3 - units (rarest); ClassId must be in UnitDefinition.ClassIds
                 new() { Reward = new() { Type = RewardType.Unit, DefinitionId = 1, ClassId = 1, Amount = 1 }, Weight = 5,  IsFeatured = false, RewardTier = 3 }, // Assassin  → class Assassin(1)
                 new() { Reward = new() { Type = RewardType.Unit, DefinitionId = 2, ClassId = 2, Amount = 1 }, Weight = 5,  IsFeatured = false, RewardTier = 3 }, // Tank      → class Tank(2)
                 new() { Reward = new() { Type = RewardType.Unit, DefinitionId = 3, ClassId = 3, Amount = 1 }, Weight = 5,  IsFeatured = false, RewardTier = 3 }, // Warrior   → class Warrior(3)
@@ -503,7 +503,7 @@ public static class SeedData
                 new() { Reward = new() { Type = RewardType.Unit, DefinitionId = 5, ClassId = 5, Amount = 1 }, Weight = 5,  IsFeatured = false, RewardTier = 3 }, // Physician → class Physician(5)
                 new() { Reward = new() { Type = RewardType.Unit, DefinitionId = 6, ClassId = 6, Amount = 1 }, Weight = 5,  IsFeatured = false, RewardTier = 3 }, // Druid     → class Druid(6)
 
-                // Tier 2 — weapons with stats (uncommon)
+                // Tier 2 - weapons with stats (uncommon)
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 7,  Amount = 1 }, Weight = 15, IsFeatured = false, RewardTier = 2 }, // Sharp Dagger   (+5 Spd)
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 8,  Amount = 1 }, Weight = 15, IsFeatured = false, RewardTier = 2 }, // Kite Shield    (+1 HP)
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 9,  Amount = 1 }, Weight = 15, IsFeatured = false, RewardTier = 2 }, // War Axe        (+1 HP)
@@ -511,13 +511,13 @@ public static class SeedData
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 11, Amount = 1 }, Weight = 15, IsFeatured = false, RewardTier = 2 }, // Sacred Tome    (+1 SP)
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 12, Amount = 1 }, Weight = 15, IsFeatured = false, RewardTier = 2 }, // Ancient Staff  (+1 HP)
 
-                // Tier 2 — trinkets with stats (uncommon)
+                // Tier 2 - trinkets with stats (uncommon)
                 new() { Reward = new() { Type = RewardType.Trinket, DefinitionId = 5, Amount = 1 }, Weight = 20, IsFeatured = false, RewardTier = 2 }, // Steel Heels     (+5 Spd)
                 new() { Reward = new() { Type = RewardType.Trinket, DefinitionId = 6, Amount = 1 }, Weight = 20, IsFeatured = false, RewardTier = 2 }, // Jeweled Monocle (+1 SP)
                 new() { Reward = new() { Type = RewardType.Trinket, DefinitionId = 7, Amount = 1 }, Weight = 20, IsFeatured = false, RewardTier = 2 }, // Iron Boots      (+1 HP)
                 new() { Reward = new() { Type = RewardType.Trinket, DefinitionId = 8, Amount = 1 }, Weight = 20, IsFeatured = false, RewardTier = 2 }, // Brass Spyglass  (+5 Spd)
 
-                // Tier 1 — weapons no stats (common)
+                // Tier 1 - weapons no stats (common)
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 1, Amount = 1 }, Weight = 25, IsFeatured = false, RewardTier = 1 }, // Dagger
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 2, Amount = 1 }, Weight = 25, IsFeatured = false, RewardTier = 1 }, // Sword & Shield
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 3, Amount = 1 }, Weight = 25, IsFeatured = false, RewardTier = 1 }, // Axe
@@ -525,13 +525,13 @@ public static class SeedData
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 5, Amount = 1 }, Weight = 25, IsFeatured = false, RewardTier = 1 }, // Holy Book
                 new() { Reward = new() { Type = RewardType.Weapon, DefinitionId = 6, Amount = 1 }, Weight = 25, IsFeatured = false, RewardTier = 1 }, // Staff of the Druid
 
-                // Tier 1 — trinkets no stats (common)
+                // Tier 1 - trinkets no stats (common)
                 new() { Reward = new() { Type = RewardType.Trinket, DefinitionId = 1, Amount = 1 }, Weight = 40, IsFeatured = false, RewardTier = 1 }, // High Heels
                 new() { Reward = new() { Type = RewardType.Trinket, DefinitionId = 2, Amount = 1 }, Weight = 40, IsFeatured = false, RewardTier = 1 }, // Monocle
                 new() { Reward = new() { Type = RewardType.Trinket, DefinitionId = 3, Amount = 1 }, Weight = 40, IsFeatured = false, RewardTier = 1 }, // Strong Boots
                 new() { Reward = new() { Type = RewardType.Trinket, DefinitionId = 4, Amount = 1 }, Weight = 40, IsFeatured = false, RewardTier = 1 }, // Spyglass
 
-                // Tier 1 — gem fillers (most common)
+                // Tier 1 - gem fillers (most common)
                 new() { Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = 50  }, Weight = 200, IsFeatured = false, RewardTier = 1 },
                 new() { Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = 100 }, Weight = 80,  IsFeatured = false, RewardTier = 1 },
             ],
@@ -557,7 +557,7 @@ public static class SeedData
 
         await col.InsertManyAsync(new[]
         {
-            // MatchResult — simple bool condition, +1 per qualifying action
+            // MatchResult - simple bool condition, +1 per qualifying action
             new RewardRule
             {
                 ActionType = "MatchResult",
@@ -568,7 +568,7 @@ public static class SeedData
                 IsActive = true,
             },
 
-            // MatchResult — multi-condition (bool + numeric >=), grants a tier-2 weapon (exercises the
+            // MatchResult - multi-condition (bool + numeric >=), grants a tier-2 weapon (exercises the
             // dedupe/compensation path in PlayerProfileService.ApplyReward if already owned)
             new RewardRule
             {
@@ -584,7 +584,7 @@ public static class SeedData
                 IsActive = true,
             },
 
-            // MatchResult — long-run counter that grants a Unit (exercises RewardType.Unit + ClassId)
+            // MatchResult - long-run counter that grants a Unit (exercises RewardType.Unit + ClassId)
             new RewardRule
             {
                 ActionType = "MatchResult",
@@ -595,7 +595,7 @@ public static class SeedData
                 IsActive = true,
             },
 
-            // GachaPull — accumulates the actual pull count per action instead of counting actions
+            // GachaPull - accumulates the actual pull count per action instead of counting actions
             new RewardRule
             {
                 ActionType = "GachaPull",
@@ -606,7 +606,7 @@ public static class SeedData
                 IsActive = true,
             },
 
-            // GachaPull — string condition on rarestTier
+            // GachaPull - string condition on rarestTier
             new RewardRule
             {
                 ActionType = "GachaPull",
@@ -617,7 +617,7 @@ public static class SeedData
                 IsActive = true,
             },
 
-            // Purchase — accumulates gems spent across purchases
+            // Purchase - accumulates gems spent across purchases
             new RewardRule
             {
                 ActionType = "Purchase",
@@ -628,7 +628,7 @@ public static class SeedData
                 IsActive = true,
             },
 
-            // StoryProgress — chapter-complete condition
+            // StoryProgress - chapter-complete condition
             new RewardRule
             {
                 ActionType = "StoryProgress",

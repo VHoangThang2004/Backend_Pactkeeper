@@ -31,4 +31,11 @@ public interface IStoryProgressService
 
     // Check if a chapter is fully completed — used for PvP gate.
     Task<bool> IsChapterCompletedAsync(string playerId, int chapterId);
+
+    // Highest completed chapter ID for replay/unlock checks (-1 if none).
+    Task<int> GetMaxCompletedChapterIdAsync(string playerId);
+
+    // Prepare or validate a specific (chapterId, sceneId) selected manually from 10_StoryProgress.
+    Task<(StoryProgress? Progress, string? Error)> PrepareSelectedSceneAsync(
+        string playerId, int targetChapterId, int targetSceneId);
 }

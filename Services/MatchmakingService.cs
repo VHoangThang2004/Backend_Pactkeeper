@@ -346,13 +346,19 @@ public class MatchmakingService : BackgroundService
         }
     }
 
-    // Map selection per scene — currently all chapters/scenes use the same map.
-    // Extend this switch as new chapters introduce different maps.
+    // Fallback map selection per scene when ChapterConfig.Scene.MapId is omitted.
     private static string GetMapIdForScene(int chapterId, int sceneId) => (chapterId, sceneId) switch
     {
-        (0, 1) => "MD_PVE_C0S1",   // Chapter 0 Scene 1 — tutorial battle 1
-        (0, 2) => "MD_PVE_C0S2",   // Chapter 0 Scene 2 — tutorial battle 2
-        (0, 3) => "MD_PVE_C0S3",   // Chapter 0 Scene 3 — tutorial battle 3
+        (0, 1) => "MD_PVE_C0S1",
+        (0, 2) => "MD_PVE_C0S2",
+        (0, 3) => "MD_PVE_C0S3",
+        (1, 1) => "MD_PVE_C1S1",
+        (1, 2) => "MD_PVE_C1S2",
+        (1, 3) => "MD_PVE_C1S3",
+        (2, 1) => "MD_PVE_C2S1",
+        (2, 2) => "MD_PVE_C2S2",
+        (3, 1) => "MD_PVE_C3S1",
+        (3, 2) => "MD_PVE_C3S2",
         _ => "MD_PVP_001"
     };
 }

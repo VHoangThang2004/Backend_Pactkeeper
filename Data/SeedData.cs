@@ -25,68 +25,158 @@ public static class SeedData
             new ChapterConfig
             {
                 ChapterId = 0,
-                Title = "Chapter 0 — The First Pact",
-                MapId = "MD_PVP_001",
+                Title = "Chapter 0 — The Covenant of Time",
+                MapId = "MD_PVE_C0S1",
                 Scenes = new List<SceneConfig>
                 {
                     new SceneConfig
                     {
                         SceneId = 0,
                         Type = SceneType.Cutscene,
-                        Description = "Name input screen — player signs their name",
-                        AutoResume=true,
-                        AutoAdvance=true
+                        Description = "0.0 - Signing the First Pact",
+                        AutoResume = true,
+                        AutoAdvance = true
                     },
                     new SceneConfig
                     {
                         SceneId = 1,
                         Type = SceneType.Battle,
-                        Description = "Tutorial battle — learn movement and skills",
+                        Description = "0.1 - The Patience Lesson",
                         MapId = "MD_PVE_C0S1",
-                        AutoResume=true,
-                        AutoAdvance=true
+                        AutoResume = true,
+                        AutoAdvance = true
                     },
                     new SceneConfig
                     {
                         SceneId = 2,
                         Type = SceneType.Battle,
-                        Description = "Tutorial battle 2 — delayed weapon",
+                        Description = "0.2 - The Vanguard's Delayed Cleave",
                         MapId = "MD_PVE_C0S2",
-                        AutoResume=true,
-                        AutoAdvance=true
+                        AutoResume = true,
+                        AutoAdvance = true
                     },
                     new SceneConfig
                     {
                         SceneId = 3,
                         Type = SceneType.Battle,
-                        Description = "Tutorial battle 3 — synergy combo",
+                        Description = "0.3 - Breaking the Limit",
                         MapId = "MD_PVE_C0S3",
-                        AutoResume=true,
-                        AutoAdvance=true
+                        AutoResume = true,
+                        AutoAdvance = true
                     },
                     new SceneConfig
                     {
                         SceneId = 4,
                         Type = SceneType.Dialogue,
-                        Description = "Main menu walkthrough tooltips",
-                        AutoResume=true,
-                        AutoAdvance=true
+                        Description = "0.4 - Sanctum Command Overview",
+                        AutoResume = true,
+                        AutoAdvance = true
                     },
                     new SceneConfig
                     {
                         SceneId = 5,
                         Type = SceneType.Dialogue,
-                        Description = "Unit list walkthrough tooltips",
-                        AutoResume=true,
-                        AutoAdvance=true
+                        Description = "0.5 - Roster of the Bound",
+                        AutoResume = true,
+                        AutoAdvance = true
                     },
                     new SceneConfig
                     {
                         SceneId = 6,
                         Type = SceneType.Dialogue,
-                        Description = "Unit config walkthrough tooltips",
-                        AutoResume=true,
-                        AutoAdvance=true
+                        Description = "0.6 - Arming the Vanguard",
+                        AutoResume = true,
+                        AutoAdvance = true
+                    },
+                }
+            },
+            new ChapterConfig
+            {
+                ChapterId = 1,
+                Title = "Chapter 1 — The Iron Wall",
+                MapId = "MD_PVE_C1S1",
+                Scenes = new List<SceneConfig>
+                {
+                    new SceneConfig
+                    {
+                        SceneId = 1,
+                        Type = SceneType.Battle,
+                        Description = "1.1 - Shield of the Vanguard",
+                        MapId = "MD_PVE_C1S1",
+                        AutoResume = false,
+                        AutoAdvance = true
+                    },
+                    new SceneConfig
+                    {
+                        SceneId = 2,
+                        Type = SceneType.Battle,
+                        Description = "1.2 - Diagonal Calibration",
+                        MapId = "MD_PVE_C1S2",
+                        AutoResume = false,
+                        AutoAdvance = true
+                    },
+                    new SceneConfig
+                    {
+                        SceneId = 3,
+                        Type = SceneType.Battle,
+                        Description = "1.3 - Into the Firing Line",
+                        MapId = "MD_PVE_C1S3",
+                        AutoResume = false,
+                        AutoAdvance = true
+                    },
+                }
+            },
+            new ChapterConfig
+            {
+                ChapterId = 2,
+                Title = "Chapter 2 — Long Reach in the Mire",
+                MapId = "MD_PVE_C2S1",
+                Scenes = new List<SceneConfig>
+                {
+                    new SceneConfig
+                    {
+                        SceneId = 1,
+                        Type = SceneType.Battle,
+                        Description = "2.1 - The Half-Instant Remedy",
+                        MapId = "MD_PVE_C2S1",
+                        AutoResume = false,
+                        AutoAdvance = true
+                    },
+                    new SceneConfig
+                    {
+                        SceneId = 2,
+                        Type = SceneType.Battle,
+                        Description = "2.2 - Lenses of Far Sight",
+                        MapId = "MD_PVE_C2S2",
+                        AutoResume = false,
+                        AutoAdvance = true
+                    },
+                }
+            },
+            new ChapterConfig
+            {
+                ChapterId = 3,
+                Title = "Chapter 3 — The Forest Pact",
+                MapId = "MD_PVE_C3S1",
+                Scenes = new List<SceneConfig>
+                {
+                    new SceneConfig
+                    {
+                        SceneId = 1,
+                        Type = SceneType.Battle,
+                        Description = "3.1 - Roots of Nature's Force",
+                        MapId = "MD_PVE_C3S1",
+                        AutoResume = false,
+                        AutoAdvance = true
+                    },
+                    new SceneConfig
+                    {
+                        SceneId = 2,
+                        Type = SceneType.Battle,
+                        Description = "3.2 - The Unifier's Trial",
+                        MapId = "MD_PVE_C3S2",
+                        AutoResume = false,
+                        AutoAdvance = true
                     },
                 }
             }
@@ -98,7 +188,7 @@ public static class SeedData
             await chapters.InsertOneAsync(config);
         }
 
-        Console.WriteLine("[Seed] ChapterConfigs seeded.");
+        Console.WriteLine("[Seed] ChapterConfigs (Chapters 0..3) seeded with AutoResume=false for Ch1..3.");
     }
 
     private static async Task SeedLibraryAsync(IMongoDatabase database)

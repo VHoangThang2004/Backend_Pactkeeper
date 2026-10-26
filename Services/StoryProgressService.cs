@@ -113,7 +113,7 @@ public class StoryProgressService : IStoryProgressService
         await _repository.UpdateAsync(current.Id, current);
         return new AdvanceResult(current, nextScene, true);
     }
-    
+
     // Advance to the next scene.
     // Rejected if current scene not yet completed.
     // Returns null if no next scene exists (chapter fully done).
@@ -166,5 +166,77 @@ public class StoryProgressService : IStoryProgressService
         var progress = await _repository.GetByFilterAsync(
             p => p.PlayerId == playerId && p.ChapterId == chapterId);
         return progress?.IsChapterCompleted ?? false;
+    }
+
+    public async Task<int> GetMaxCompletedChapterIdAsync(string playerId)
+    {
+        var all = await _repository.GetAllByFilterAsync(p => p.PlayerId == playerId);
+        var completedChapters = all.Where(p => p.IsChapterCompleted).Select(p => p.ChapterId).ToList();
+        return completedChapters.Count > 0 ? completedChapters.Max() : -1;
+    }
+
+    public async Task<(StoryProgress? Progress, string? Error)> PrepareSelectedSceneAsync(
+        string playerId, int targetChapterId, int targetSceneId)
+    {
+        var chapterCfg = await _chapterConfigService.GetByChapterIdAsync(targetChapterId);
+        if (chapterCfg == null)
+            return (null, $"Chapter {targetChapterId} configuration not found.");
+
+        var sceneCfg = chapterCfg.Scenes.FirstOrDefault(s => s.SceneId == targetSceneId);
+        if (sceneCfg == null)
+            return (null, $"Scene {targetSceneId} not found in Chapter {targetChapterId}.");
+
+        var all = await _repository.GetAllByFilterAsync(p => p.PlayerId == playerId);
+        int maxCompletedChapterId = all
+            .Where(p => p.IsChapterCompleted)
+            .Select(p => (int?)p.ChapterId)
+            .Max() ?? -1;
+
+        if (targetChapterId > maxCompletedChapterId + 1)
+            return (null, $"Chapter {targetChapterId} is still locked.");
+
+        var existingChapterProg = all.FirstOrDefault(p => p.ChapterId == targetChapterId);
+
+        if (existingChapterProg == null)
+        {
+            int firstSceneId = chapterCfg.Scenes.OrderBy(s => s.SceneId).First().SceneId;
+            if (targetSceneId != firstSceneId)
+                return (null, $"Must start Chapter {targetChapterId} from Scene {firstSceneId}.");
+
+            var newChapterProg = new StoryProgress
+            {
+                PlayerId = playerId,
+                ChapterId = targetChapterId,
+                SceneId = targetSceneId,
+                IsCompleted = false,
+                IsChapterCompleted = false,
+                StartedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await _repository.CreateAsync(newChapterProg);
+            return (newChapterProg, null);
+        }
+
+        if (existingChapterProg.IsChapterCompleted)
+        {
+            existingChapterProg.UpdatedAt = DateTime.UtcNow;
+            await _repository.UpdateAsync(existingChapterProg.Id, existingChapterProg);
+            return (existingChapterProg, null);
+        }
+
+        int unlockedSceneHighWaterMark = existingChapterProg.IsCompleted
+            ? existingChapterProg.SceneId + 1
+            : existingChapterProg.SceneId;
+
+        if (targetSceneId > unlockedSceneHighWaterMark)
+            return (null, $"Scene {targetChapterId}.{targetSceneId} is not unlocked yet.");
+
+        existingChapterProg.SceneId = targetSceneId;
+        existingChapterProg.IsCompleted = false;
+        existingChapterProg.UpdatedAt = DateTime.UtcNow;
+        await _repository.UpdateAsync(existingChapterProg.Id, existingChapterProg);
+
+        return (existingChapterProg, null);
     }
 }

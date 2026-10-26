@@ -59,35 +59,87 @@ public class StoryController : ControllerBase
 
     // -------------------------------------------------------
     // POST /api/story/progress/complete
-    // No body. Client says "I finished this scene."
-    // Rejected if current scene is a Battle — only server can complete those.
+    // Optional query params (?chapterId=X&sceneId=Y) guard against double-advancing
+    // when the headless server's /progress/battle-complete already completed the scene.
     // -------------------------------------------------------
     [HttpPost("progress/complete")]
     [Authorize(Roles = "Player")]
-    public async Task<ActionResult<CurrentProgressDto>> CompleteScene()
+    public async Task<ActionResult<CurrentProgressDto>> CompleteScene(
+        [FromQuery] int? chapterId = null,
+        [FromQuery] int? sceneId = null)
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
         if (playerId == null) return Unauthorized();
 
         var current = await _storyService.GetCurrentAsync(playerId);
 
-        if (current.IsCompleted)
-            return BadRequest("Scene already completed. Call /next to continue.");
+        // Idempotency guard: if the caller specifies (chapterId, sceneId) and the server's
+        // /battle-complete already advanced progress past that scene (or completed the chapter),
+        // return the current state without completing the NEW scene by mistake.
+        if (chapterId.HasValue && sceneId.HasValue)
+        {
+            bool alreadyPastTarget =
+                current.IsChapterCompleted ||
+                current.ChapterId != chapterId.Value ||
+                current.SceneId != sceneId.Value;
 
-        // Guard: Battle scenes can only be completed by the server
+            if (alreadyPastTarget)
+            {
+                await TerminateStoryMatchesAsync(playerId, $"cleanup completed C{chapterId.Value}_S{sceneId.Value}");
+                var curScene = current.IsChapterCompleted
+                    ? null
+                    : await _chapterConfigService.GetSceneAsync(current.ChapterId, current.SceneId);
+
+                return Ok(new CurrentProgressDto(
+                    current.ChapterId,
+                    current.SceneId,
+                    current.IsCompleted,
+                    current.IsChapterCompleted,
+                    curScene?.Type.ToString() ?? "None",
+                    curScene?.AutoResume ?? false,
+                    true
+                ));
+            }
+        }
+
+        if (current.IsCompleted)
+        {
+            var curScene = await _chapterConfigService.GetSceneAsync(current.ChapterId, current.SceneId);
+            if (chapterId.HasValue && sceneId.HasValue)
+            {
+                await TerminateStoryMatchesAsync(playerId, $"cleanup completed C{current.ChapterId}_S{current.SceneId}");
+                return Ok(new CurrentProgressDto(
+                    current.ChapterId,
+                    current.SceneId,
+                    current.IsCompleted,
+                    current.IsChapterCompleted,
+                    curScene?.Type.ToString() ?? "None",
+                    curScene?.AutoResume ?? false,
+                    false
+                ));
+            }
+            return BadRequest("Scene already completed. Call /next to continue.");
+        }
+
         var scene = await _chapterConfigService.GetSceneAsync(
             current.ChapterId, current.SceneId);
 
         if (scene == null)
             return NotFound("Scene config not found.");
 
-        // Chapter 0 tutorial battles are completed by the client (BattleTutorialStarter).
-        // Competitive Battle scenes (Ch1+) must only be completed by the game server.
-        if (scene.Type == SceneType.Battle && current.ChapterId != 0)
+        // Tutorial battles (Ch0..Ch3) are completed by the client (BattleTutorialStarter).
+        if (scene.Type == SceneType.Battle && current.ChapterId > 3)
             return BadRequest("Battle scenes are completed by the server, not the client.");
 
+        var advanceResult = await _storyService.CompleteAndAdvanceAsync(playerId, scene);
+
+        if (scene.Type == SceneType.Battle)
+        {
+            await TerminateStoryMatchesAsync(playerId, $"completed tutorial battle C{current.ChapterId}_S{current.SceneId}");
+        }
+
         // Auto-advances server-side if scene.AutoAdvance
-        return Ok(ToDto(await _storyService.CompleteAndAdvanceAsync(playerId, scene)));
+        return Ok(ToDto(advanceResult));
     }
 
     // -------------------------------------------------------
@@ -161,7 +213,7 @@ public class StoryController : ControllerBase
         // Complete the battle scene (auto-advances server-side if scene.AutoAdvance)
         return Ok(ToDto(await _storyService.CompleteAndAdvanceAsync(dto.PlayerId, scene)));
     }
-    
+
     // Pure mapping: AdvanceResult -> DTO. No business logic here.
     private static CurrentProgressDto ToDto(AdvanceResult r) => new(
         r.Progress.ChapterId,
@@ -176,12 +228,6 @@ public class StoryController : ControllerBase
     // -------------------------------------------------------
     // POST /api/story/match
     // No body. Spawns a battle server for the current battle scene.
-    // Rejected if current scene is not a Battle or already completed.
-    // Story/PvE battles are NOT resumable: the plot config (PlotSequencer) only lives
-    // in the Unity client and always restarts from node 0 when the scene is loaded.
-    // Reconnecting to an old server would restore stale unit positions / instant /
-    // used skills that no longer match the plot nodes. So any leftover story match
-    // for this player is terminated and a fresh server is spawned for the scene.
     // -------------------------------------------------------
     [HttpPost("match")]
     [Authorize(Roles = "Player")]
@@ -226,6 +272,97 @@ public class StoryController : ControllerBase
             return StatusCode(503, "No server ports available.");
 
         return Ok(new StoryMatchResponseDto(match.MatchId, match.ServerIp, match.ServerPort));
+    }
+
+    // -------------------------------------------------------
+    // POST /api/story/match/select
+    // Called when the player manually selects a Chapter/Scene from 10_StoryProgress Dropdown.
+    // Strictly enforces autoResume = false, terminates any active story server, and spawns
+    // a fresh headless server for the exact (ChapterId, SceneId) requested.
+    // -------------------------------------------------------
+    [HttpPost("match/select")]
+    [Authorize(Roles = "Player")]
+    public async Task<ActionResult<StoryMatchSelectResponseDto>> StartSelectedStoryMatch(
+        [FromBody] SelectStoryMatchRequestDto request)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        bool effectiveAutoResume = false;
+
+        var (progress, error) = await _storyService.PrepareSelectedSceneAsync(
+            playerId, request.ChapterId, request.SceneId);
+
+        if (progress == null)
+            return BadRequest(error ?? "Cannot select the requested story scene.");
+
+        var scene = await _chapterConfigService.GetSceneAsync(
+            request.ChapterId, request.SceneId);
+
+        if (scene == null)
+            return NotFound("Scene config not found.");
+
+        int maxCompletedChapterId = await _storyService.GetMaxCompletedChapterIdAsync(playerId);
+        bool canSkipOrExit = request.ChapterId <= maxCompletedChapterId || progress.IsChapterCompleted;
+
+        if (scene.Type != SceneType.Battle)
+        {
+            await TerminateStoryMatchesAsync(playerId, $"switch to non-battle C{request.ChapterId}_S{request.SceneId}");
+            return Ok(new StoryMatchSelectResponseDto(
+                string.Empty,
+                string.Empty,
+                0,
+                request.ChapterId,
+                request.SceneId,
+                scene.Type.ToString(),
+                effectiveAutoResume,
+                canSkipOrExit
+            ));
+        }
+
+        var existing = await _matchService.GetActiveMatchByPlayerIdAsync(playerId);
+        if (existing != null && existing.Mode != "story")
+            return Conflict("Player is already in an ongoing non-story match.");
+
+        var killed = await TerminateStoryMatchesAsync(playerId,
+            $"manual select C{request.ChapterId}_S{request.SceneId} (autoResume=false)");
+        if (killed > 0)
+        {
+            Console.WriteLine($"[Story] Terminated {killed} stale story match(es) for {playerId} " +
+                              $"before starting C{request.ChapterId}_S{request.SceneId} (autoResume=false).");
+        }
+
+        var match = await _matchmakingService.CreateStoryMatchAsync(
+            _matchService, playerId, request.ChapterId, request.SceneId, scene.MapId);
+
+        if (match == null)
+            return StatusCode(503, "No server ports available.");
+
+        return Ok(new StoryMatchSelectResponseDto(
+            match.MatchId,
+            match.ServerIp,
+            match.ServerPort,
+            request.ChapterId,
+            request.SceneId,
+            scene.Type.ToString(),
+            effectiveAutoResume,
+            canSkipOrExit
+        ));
+    }
+
+    // -------------------------------------------------------
+    // POST /api/story/terminate
+    // Immediately terminates the Dedicated Server process when clicking "Exit to Map".
+    // -------------------------------------------------------
+    [HttpPost("terminate")]
+    [Authorize(Roles = "Player")]
+    public async Task<ActionResult> TerminateStoryMatch()
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var killed = await TerminateStoryMatchesAsync(playerId, "Player exited replay to Story Map");
+        return Ok(new { terminated = killed });
     }
 
     // -------------------------------------------------------
@@ -287,3 +424,14 @@ public record CurrentProgressDto(
 public record StoryProgressDto(int ChapterId, int SceneId, bool IsCompleted, bool IsChapterCompleted);
 public record BattleCompleteDto(string PlayerId);
 public record StoryMatchResponseDto(string MatchId, string ServerIp, int ServerPort);
+public record SelectStoryMatchRequestDto(int ChapterId, int SceneId, bool AutoResume = false);
+public record StoryMatchSelectResponseDto(
+    string MatchId,
+    string ServerIp,
+    int ServerPort,
+    int ChapterId,
+    int SceneId,
+    string SceneType,
+    bool AutoResume,
+    bool CanSkipOrExit
+);

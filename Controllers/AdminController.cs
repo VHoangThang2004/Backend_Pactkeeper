@@ -8,7 +8,7 @@ namespace GameInventoryApi.Controllers;
 
 [ApiController]
 [Route("api/admin")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Technical Support,Support")]
 public class AdminController : ControllerBase
 {
     private readonly IMatchSessionService _matchSessionService;
@@ -20,6 +20,16 @@ public class AdminController : ControllerBase
         _matchSessionService = matchSessionService;
         _matchQueueService = matchQueueService;
         _serverState = serverState;
+    }
+
+    [HttpGet("system-state")]
+    public IActionResult GetSystemState()
+    {
+        return Ok(new
+        {
+            loginBlocked = _serverState.LoginBlocked,
+            matchmakingBlocked = _serverState.MatchmakingBlocked
+        });
     }
     
     [HttpPost("force-stop-all")]

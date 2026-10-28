@@ -16,11 +16,11 @@ public class ClassDefinitionController : ControllerBase
 
     // Admin CRUD
     [HttpGet]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult<List<ClassDefinition>>> GetAll() => await _service.GetAllAsync();
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult<ClassDefinition>> Get(string id)
     {
         var item = await _service.GetByIdAsync(id);
@@ -36,7 +36,7 @@ public class ClassDefinitionController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Create([FromBody] ClassDefinition classDef)
     {
         await _service.CreateAsync(classDef);
@@ -44,7 +44,7 @@ public class ClassDefinitionController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Update(string id, [FromBody] ClassDefinition classDef)
     {
         await _service.UpdateAsync(id, classDef);
@@ -52,7 +52,7 @@ public class ClassDefinitionController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Delete(string id)
     {
         await _service.DeleteAsync(id);

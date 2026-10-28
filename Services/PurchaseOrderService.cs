@@ -35,6 +35,9 @@ public class PurchaseOrderService : IPurchaseOrderService
     public Task<List<PurchaseOrder>> GetByPlayerIdAsync(string playerId)
         => _repository.GetAllByFilterAsync(o => o.PlayerId == playerId);
 
+    public Task<List<PurchaseOrder>> GetAllOrdersAsync()
+        => _repository.GetAllAsync();
+
     public async Task<bool> ConfirmOrderAsync(long orderCode)
     {
         var order = await _repository.GetByFilterAsync(o => o.OrderCode == orderCode);

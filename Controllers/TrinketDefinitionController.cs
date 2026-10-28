@@ -34,7 +34,7 @@ public class TrinketDefinitionController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Create([FromBody] TrinketDefinition trinket)
     {
         await _service.CreateAsync(trinket);
@@ -42,7 +42,7 @@ public class TrinketDefinitionController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Update(string id, [FromBody] TrinketDefinition trinket)
     {
         await _service.UpdateAsync(id, trinket);
@@ -50,7 +50,7 @@ public class TrinketDefinitionController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Delete(string id)
     {
         await _service.DeleteAsync(id);

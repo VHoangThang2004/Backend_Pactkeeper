@@ -75,7 +75,7 @@ public class SupportController(
 
     // GET /api/support/admin/players
     [HttpGet("admin/players")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Technical Support,Support")]
     public async Task<ActionResult<List<ActiveChatPlayerDto>>> GetActivePlayers()
     {
         var list = await _supportService.GetActiveChatPlayersAsync();
@@ -84,7 +84,7 @@ public class SupportController(
 
     // GET /api/support/admin/chat/{playerId}
     [HttpGet("admin/chat/{playerId}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Technical Support,Support")]
     public async Task<ActionResult<List<SupportMessageDto>>> GetAdminChatHistory(string playerId)
     {
         var list = await _supportService.GetChatHistoryAsync(playerId);
@@ -102,7 +102,7 @@ public class SupportController(
 
     // POST /api/support/admin/chat/{playerId}
     [HttpPost("admin/chat/{playerId}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Technical Support,Support")]
     public async Task<ActionResult<SupportMessageDto>> AdminReply(string playerId, [FromBody] AdminReplyRequestDto dto)
     {
         var m = await _supportService.SendMessageAsync(playerId, "admin", "Keeper of Records", dto.Text, dto.AttachmentUrl ?? "");

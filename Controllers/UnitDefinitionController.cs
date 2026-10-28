@@ -34,7 +34,7 @@ public class UnitDefinitionController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Create([FromBody] UnitDefinition unit)
     {
         await _service.CreateAsync(unit);
@@ -42,7 +42,7 @@ public class UnitDefinitionController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Update(string id, [FromBody] UnitDefinition unit)
     {
         await _service.UpdateAsync(id, unit);
@@ -50,7 +50,7 @@ public class UnitDefinitionController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Delete(string id)
     {
         await _service.DeleteAsync(id);

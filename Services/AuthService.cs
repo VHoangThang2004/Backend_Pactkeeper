@@ -35,6 +35,9 @@ public class AuthService : IAuthService
         if (user == null || !user.HasPassword || user.PasswordHash != dto.Password)
             return null;
 
+        if (user.IsBanned)
+            return null;
+
         return new AuthResponseDto(GenerateJwtToken(user), user.Role, user.Username, user.Id);
     }
 

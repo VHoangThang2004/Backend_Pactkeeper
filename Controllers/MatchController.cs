@@ -123,10 +123,10 @@ public class MatchController : ControllerBase
     }
 
     [HttpGet("history")]
-    [Authorize(Roles = "Player,Admin")]
+    [Authorize(Roles = "Player,Admin,Moderator,Technical Support,Support")]
     public async Task<ActionResult<List<MatchSessionDto>>> GetMatchHistory()
     {
-        if (User.IsInRole("Admin"))
+        if (User.IsInRole("Admin") || User.IsInRole("Moderator") || User.IsInRole("Technical Support") || User.IsInRole("Support"))
         {
             var activeMatches = await _matchService.GetAllAsync();
             var historyMatches = await _historyService.GetAllAsync();
@@ -157,7 +157,7 @@ public class MatchController : ControllerBase
     }
 
     [HttpGet("log-files")]
-    [Authorize(Roles = "Admin,Server")]
+    [Authorize(Roles = "Admin,Server,Technical Support,Support,Moderator")]
     public ActionResult<List<MatchLogFileInfo>> GetAvailableLogFiles()
     {
         var localPath = _serverConfig.LocalPath;
@@ -190,7 +190,7 @@ public class MatchController : ControllerBase
     }
 
     [HttpGet("{matchId}/logs")]
-    [Authorize(Roles = "Admin,Server")]
+    [Authorize(Roles = "Admin,Server,Technical Support,Support,Moderator")]
     public async Task<ActionResult<MatchLogResponseDto>> GetMatchLogs(string matchId)
     {
         if (string.IsNullOrWhiteSpace(matchId))

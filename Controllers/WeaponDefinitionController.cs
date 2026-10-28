@@ -34,7 +34,7 @@ public class WeaponDefinitionController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Create([FromBody] WeaponDefinition weapon)
     {
         await _service.CreateAsync(weapon);
@@ -42,7 +42,7 @@ public class WeaponDefinitionController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Update(string id, [FromBody] WeaponDefinition weapon)
     {
         await _service.UpdateAsync(id, weapon);
@@ -50,7 +50,7 @@ public class WeaponDefinitionController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Delete(string id)
     {
         await _service.DeleteAsync(id);

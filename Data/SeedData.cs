@@ -214,7 +214,15 @@ public static class SeedData
         var users = database.GetCollection<User>("Users");
         if (await users.CountDocumentsAsync(_ => true) > 0)
         {
-            Console.WriteLine("[Seed] Users already seeded, skipping.");
+            if (!await users.Find(u => u.Username == "moderator").AnyAsync())
+            {
+                await users.InsertOneAsync(new User { Username = "moderator", PasswordHash = "admin123", Role = "Moderator", HasPassword = true });
+            }
+            if (!await users.Find(u => u.Username == "techsupport").AnyAsync())
+            {
+                await users.InsertOneAsync(new User { Username = "techsupport", PasswordHash = "admin123", Role = "Technical Support", HasPassword = true });
+            }
+            Console.WriteLine("[Seed] Users already seeded, ensured moderator and techsupport accounts.");
             return;
         }
 

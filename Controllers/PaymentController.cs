@@ -1,4 +1,5 @@
 using GameInventoryApi.Services;
+using GameInventoryApi.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -11,7 +12,7 @@ namespace GameInventoryApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Player")]
+[Authorize]
 public class PaymentController(
     IConfiguration configuration,
     ITopUpPackService topUpPackService,
@@ -39,6 +40,7 @@ public class PaymentController(
 
     // POST /api/payment/create-order
     [HttpPost("create-order")]
+    [Authorize(Roles = "Player")]
     public async Task<ActionResult<CreateOrderResponseDto>> CreateOrder([FromBody] CreateOrderRequestDto dto)
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
@@ -84,14 +86,24 @@ public class PaymentController(
         return Ok(new CreateOrderResponseDto(orderCode, checkoutUrl, "PENDING"));
     }
 
-    // GET /api/payment/history — player's own transaction history
+    // GET /api/payment/history — player's own transaction history (or all transactions if Admin)
     [HttpGet("history")]
     public async Task<ActionResult<List<TransactionHistoryDto>>> GetHistory()
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
-        if (playerId == null) return Unauthorized();
+        var isAdmin = User.IsInRole("Admin");
+        List<PurchaseOrder> orders;
 
-        var orders = await orderService.GetByPlayerIdAsync(playerId);
+        if (isAdmin)
+        {
+            orders = await orderService.GetAllOrdersAsync();
+        }
+        else
+        {
+            var playerId = User.FindFirst("PlayerId")?.Value;
+            if (playerId == null) return Unauthorized();
+            orders = await orderService.GetByPlayerIdAsync(playerId);
+        }
+
         var result = orders
             .OrderByDescending(o => o.CreatedAt)
             .Select(o => new TransactionHistoryDto(
@@ -101,9 +113,38 @@ public class PaymentController(
                 o.UnitDefinitionIds,
                 o.WeaponDefinitionIds,
                 o.TrinketDefinitionIds,
-                o.Status.ToString(),
+                o.Status == PurchaseOrderStatus.Confirmed ? "PAID" : (o.Status == PurchaseOrderStatus.Cancelled ? "CANCELLED" : "PENDING"),
                 o.CreatedAt,
-                o.ConfirmedAt))
+                o.ConfirmedAt,
+                o.PlayerId,
+                o.TopUpPackId,
+                o.Id))
+            .ToList();
+
+        return Ok(result);
+    }
+
+    // GET /api/payment/admin/orders — all transactions for Admin
+    [HttpGet("admin/orders")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<List<TransactionHistoryDto>>> GetAdminOrders()
+    {
+        var orders = await orderService.GetAllOrdersAsync();
+        var result = orders
+            .OrderByDescending(o => o.CreatedAt)
+            .Select(o => new TransactionHistoryDto(
+                o.OrderCode,
+                o.Amount,
+                o.GemsAmount,
+                o.UnitDefinitionIds,
+                o.WeaponDefinitionIds,
+                o.TrinketDefinitionIds,
+                o.Status == PurchaseOrderStatus.Confirmed ? "PAID" : (o.Status == PurchaseOrderStatus.Cancelled ? "CANCELLED" : "PENDING"),
+                o.CreatedAt,
+                o.ConfirmedAt,
+                o.PlayerId,
+                o.TopUpPackId,
+                o.Id))
             .ToList();
 
         return Ok(result);
@@ -201,5 +242,8 @@ public record TransactionHistoryDto(
     List<int> TrinketDefinitionIds,
     string Status,
     DateTime CreatedAt,
-    DateTime? ConfirmedAt
+    DateTime? ConfirmedAt,
+    string? PlayerId = null,
+    string? PackId = null,
+    string? Id = null
 );

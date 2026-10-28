@@ -3,6 +3,7 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace GameInventoryApi.Models;
 
+[BsonIgnoreExtraElements]
 public class PlayerProfile
 {
     [BsonId]
@@ -13,6 +14,7 @@ public class PlayerProfile
     public string Username { get; set; } = string.Empty;
     public int Level { get; set; } = 1;
     public int Experience { get; set; } = 0;
+    public int Gold { get; set; } = 0;
     public int Gems { get; set; } = 0;
     public int Rating { get; set; } = 0;
     public int RankTier { get; set; } = 0;
@@ -20,11 +22,17 @@ public class PlayerProfile
     public int RankLosses { get; set; } = 0;
     public DateTime LastLogin { get; set; } = DateTime.UtcNow;
 
+    public bool IsBanned { get; set; } = false;
+    public string? BanReason { get; set; }
+    public DateTime? BannedAt { get; set; }
+    public string? BanDuration { get; set; }
+
     public List<OwnedUnit> OwnedUnits { get; set; } = new();
     public List<OwnedWeapon> OwnedWeapons { get; set; } = new();
     public List<OwnedTrinket> OwnedTrinkets { get; set; } = new();
 }
 
+[BsonIgnoreExtraElements]
 public class OwnedUnit
 {
     public string OwnedUnitId { get; set; } = string.Empty;
@@ -37,12 +45,14 @@ public class OwnedUnit
     public int EquippedClassSkillId { get; set; } = -1;
 }
 
+[BsonIgnoreExtraElements]
 public class OwnedWeapon
 {
     public string OwnedWeaponId { get; set; } = string.Empty;
     public int WeaponDefinitionId { get; set; }
 }
 
+[BsonIgnoreExtraElements]
 public class OwnedTrinket
 {
     public string OwnedTrinketId { get; set; } = string.Empty;

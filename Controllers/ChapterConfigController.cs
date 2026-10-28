@@ -51,7 +51,7 @@ public class ChapterConfigController : ControllerBase
 
     // POST /api/chapterconfig
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult<ChapterConfig>> Create([FromBody] ChapterConfig chapter)
     {
         // Guard: chapterId must be unique
@@ -67,7 +67,7 @@ public class ChapterConfigController : ControllerBase
     // PUT /api/chapterconfig/{id}
     // Full replace — send the complete ChapterConfig including Scenes list
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Update(string id, [FromBody] ChapterConfig chapter)
     {
         var success = await _chapterService.UpdateAsync(id, chapter);
@@ -76,7 +76,7 @@ public class ChapterConfigController : ControllerBase
 
     // DELETE /api/chapterconfig/{id}
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult> Delete(string id)
     {
         var success = await _chapterService.DeleteAsync(id);

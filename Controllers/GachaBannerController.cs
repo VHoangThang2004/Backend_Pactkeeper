@@ -25,7 +25,7 @@ public class GachaBannerController : ControllerBase
 
     // GET /api/gachabanner — all banners including inactive, admin only
     [HttpGet]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult<List<GachaBannerDto>>> GetAll()
     {
         var banners = await _service.GetAllAsync();
@@ -54,7 +54,7 @@ public class GachaBannerController : ControllerBase
 
     // GET /api/gachabanner/{id} — admin only
     [HttpGet("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult<GachaBannerDto>> GetById(string id)
     {
         var banner = await _service.GetByIdAsync(id);
@@ -64,7 +64,7 @@ public class GachaBannerController : ControllerBase
 
     // POST /api/gachabanner — admin only; banners start inactive
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult<GachaBannerDto>> Create([FromBody] CreateGachaBannerDto dto)
     {
         var banner = new GachaBanner
@@ -84,7 +84,7 @@ public class GachaBannerController : ControllerBase
 
     // PUT /api/gachabanner/{id} — admin only; does not change IsActive
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<IActionResult> Update(string id, [FromBody] UpdateGachaBannerDto dto)
     {
         var existing = await _service.GetByIdAsync(id);
@@ -104,7 +104,7 @@ public class GachaBannerController : ControllerBase
 
     // PATCH /api/gachabanner/{id}/activate — admin only
     [HttpPatch("{id}/activate")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<IActionResult> Activate(string id)
     {
         var banner = await _service.GetByIdAsync(id);
@@ -115,7 +115,7 @@ public class GachaBannerController : ControllerBase
 
     // PATCH /api/gachabanner/{id}/deactivate — admin only
     [HttpPatch("{id}/deactivate")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<IActionResult> Deactivate(string id)
     {
         var banner = await _service.GetByIdAsync(id);

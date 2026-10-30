@@ -158,6 +158,12 @@ builder.Services.Configure<GoogleSettings>(builder.Configuration.GetSection("Goo
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 
 var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()!;
+// Secrets are not in appsettings.json — they come from appsettings.{Environment}.json or env vars
+if (string.IsNullOrEmpty(jwtSettings.SecretKey) ||
+    string.IsNullOrEmpty(builder.Configuration["MongoDbSettings:ConnectionString"]))
+    throw new InvalidOperationException(
+        $"Missing secrets for environment '{builder.Environment.EnvironmentName}': " +
+        "set JwtSettings:SecretKey and MongoDbSettings:ConnectionString in appsettings.{Environment}.json or env vars.");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {

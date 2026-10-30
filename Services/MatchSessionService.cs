@@ -7,11 +7,16 @@ public class MatchSessionService : IMatchSessionService
 {
     private readonly IMongoRepository<MatchSession> _repository;
     private readonly MatchmakingService _matchmakingService;
+    private readonly IMatchQueueService _queueService;
+    private readonly IUserPresenceTracker _presenceTracker;
 
-    public MatchSessionService(IMongoRepository<MatchSession> repository, MatchmakingService matchmakingService)
+    public MatchSessionService(IMongoRepository<MatchSession> repository, MatchmakingService matchmakingService,
+        IMatchQueueService queueService, IUserPresenceTracker presenceTracker)
     {
         _repository = repository;
         _matchmakingService = matchmakingService;
+        _queueService = queueService;
+        _presenceTracker = presenceTracker;
     }
     public Task<MatchSession?> GetByMatchIdAsync(string matchId)
         => _repository.GetByFilterAsync(m => m.MatchId == matchId);
@@ -78,29 +83,19 @@ public class MatchSessionService : IMatchSessionService
         if (portInUse == null)
             _matchmakingService.ReleasePort(match.ServerPort);
 
+        // Free the players: a leftover "matched" queue entry blocks re-queueing
+        foreach (var playerId in new[] { match.Player1Id, match.Player2Id })
+        {
+            _presenceTracker.SetInMatch(playerId, false);
+            await _queueService.RemoveByPlayerIdAsync(playerId);
+        }
+
         Console.WriteLine($"[Match] Terminated match {match.MatchId} mode={match.Mode} " +
                           $"port={match.ServerPort} PID={match.ProcessId} reason={reason}");
     }
     public async Task EndAllMatchesAsync()
     {
-        var active = await _repository.GetAllAsync();
-        foreach (var session in active)
-        {
-            await DeleteAsync(session.MatchId);
-            if (session.ProcessId > 0)
-            {
-                try
-                {
-                    var process = System.Diagnostics.Process.GetProcessById(session.ProcessId);
-                    process.Kill();
-                    _matchmakingService.ReleasePort(session.ServerPort);
-                    Console.WriteLine($"[Match] Killed process {session.ProcessId} for match {session.MatchId}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Match] Failed to kill process {session.ProcessId}: {ex.Message}");
-                }
-            }
-        }
+        foreach (var session in await _repository.GetAllAsync())
+            await TerminateMatchAsync(session, "admin ended all matches");
     }
 }

@@ -19,23 +19,67 @@ public class MatchmakingService : BackgroundService
     // Port Management
     // -------------------------------------------------------
 
+    // Ports are taken from the matchmaking loop and from request threads (story/friendly) at the same time
+    private readonly object _portLock = new();
+
     private int GetNextAvailablePort()
     {
-        foreach (var port in _serverConfig.GamePorts)
+        lock (_portLock)
         {
-            if (!_activePorts.Contains(port))
-            {
-                _activePorts.Add(port);
-                return port;
-            }
+            foreach (var port in _serverConfig.GamePorts)
+                if (_activePorts.Add(port))
+                    return port;
+            return -1;
         }
-        return -1;
     }
 
     public void ReleasePort(int port)
     {
-        _activePorts.Remove(port);
+        lock (_portLock) _activePorts.Remove(port);
         Console.WriteLine($"[Matchmaking] Released port {port}");
+    }
+
+    private void MarkPortInUse(int port)
+    {
+        lock (_portLock) _activePorts.Add(port);
+    }
+
+    // Only "is that PID still running" — no name check: on Linux ProcessName is truncated (15 chars),
+    // and a false "alive" just leaves the match to the max-age rule.
+    private static bool IsProcessAlive(int processId)
+    {
+        if (processId <= 0) return false;
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch { return false; }
+    }
+
+    // -------------------------------------------------------
+    // Reaper — ends matches whose server crashed, never reported, or ran far past the 60-min match cap
+    // -------------------------------------------------------
+
+    private static readonly TimeSpan SpawnGrace = TimeSpan.FromSeconds(30); // ProcessId is written just after creation
+    private static readonly TimeSpan MaxMatchAge = TimeSpan.FromMinutes(75);
+
+    private async Task ReapDeadMatches()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var matchService = scope.ServiceProvider.GetRequiredService<IMatchSessionService>();
+
+        foreach (var match in await matchService.GetAllAsync())
+        {
+            var age = DateTime.UtcNow - match.CreatedAt;
+            if (age > MaxMatchAge)
+                await matchService.TerminateMatchAsync(match, $"older than {MaxMatchAge.TotalMinutes} min");
+            // ProcessId <= 0 = server not spawned by us (e.g. dev server in the Editor) — only the age rule applies
+            else if (age > SpawnGrace && match.ProcessId > 0 && !IsProcessAlive(match.ProcessId))
+                await matchService.TerminateMatchAsync(match, "server process is gone");
+            else
+                MarkPortInUse(match.ServerPort); // after a backend restart, live matches still own their ports
+        }
     }
 
     // Kills a headless match server process if it is still running.
@@ -85,7 +129,16 @@ public class MatchmakingService : BackgroundService
         Console.WriteLine("[Matchmaking] Background service started.");
         while (!stoppingToken.IsCancellationRequested)
         {
-            await TryMatchPlayers();
+            // An exception escaping here would stop matchmaking for good
+            try
+            {
+                await ReapDeadMatches();
+                await TryMatchPlayers();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Matchmaking] Loop error: {ex}");
+            }
             await Task.Delay(3000, stoppingToken);
         }
     }

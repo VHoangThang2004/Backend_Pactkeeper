@@ -384,26 +384,7 @@ public class MatchController : ControllerBase
                 await _actionService.LogActionAsync(player1Id, "MatchResult", history.Id, facts1);
                 await _actionService.LogActionAsync(player2Id!, "MatchResult", history.Id, facts2);
             }
-            _presenceTracker.SetInMatch(match.Player1Id, false);
-            _presenceTracker.SetInMatch(match.Player2Id, false);
-            await _matchService.DeleteAsync(matchId);
-            await _queueService.RemoveByPlayerIdAsync(match.Player1Id);
-            await _queueService.RemoveByPlayerIdAsync(match.Player2Id);
-
-            if (match.ProcessId > 0)
-            {
-                try
-                {
-                    var process = System.Diagnostics.Process.GetProcessById(match.ProcessId);
-                    process.Kill();
-                    _matchmakingService.ReleasePort(match.ServerPort);
-                    Console.WriteLine($"[Match] Killed process {match.ProcessId} for match {matchId}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Match] Failed to kill process {match.ProcessId}: {ex.Message}");
-                }
-            }
+            await _matchService.TerminateMatchAsync(match, $"server reported {dto.Status}");
         }
 
         return Ok();

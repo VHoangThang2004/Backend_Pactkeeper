@@ -13,5 +13,7 @@ public class MatchResultData
     public string WinnerId { get; set; } = string.Empty;
     public int DurationSeconds { get; set; }
     public int TotalInstants { get; set; }
+    public bool IsForfeit { get; set; } = false;
+    public string? ForfeitPlayerId { get; set; } = null;
     public List<AfterMatchPlayerData> AfterMatchTeamData { get; set; } = [];
 }

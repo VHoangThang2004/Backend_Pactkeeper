@@ -42,7 +42,9 @@ public record MatchResultDataDto(
     string WinnerId,
     int DurationSeconds,
     int TotalInstants,
-    List<AfterMatchPlayerDataDto> AfterMatchTeamData
+    List<AfterMatchPlayerDataDto> AfterMatchTeamData,
+    bool IsForfeit = false,
+    string? ForfeitPlayerId = null
 );
 
 public record MatchHistoryDto(

@@ -16,7 +16,7 @@ public class MatchSession
     public int ServerPort { get; set; }
     public string Mode { get; set; } = "pvp";
     public string MapId { get; set; } = "defaultPvpMap";
-    public string Status { get; set; } = "pending"; // pending, active, finished
+    public string Status { get; set; } = "pending"; // pending, active, finishing (result being applied)
     public MatchResultData? Result { get; set; } = null;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

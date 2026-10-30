@@ -296,9 +296,17 @@ public class MatchController : ControllerBase
         var match = await _matchService.GetByMatchIdAsync(matchId);
         if (match == null) return NotFound();
 
-        await _matchService.UpdateStatusAsync(matchId, dto.Status, dto.Result);
+        if (dto.Status != "cancelled" && dto.Status != "completed")
+        {
+            await _matchService.UpdateStatusAsync(matchId, dto.Status, dto.Result);
+            return Ok();
+        }
 
-        if (dto.Status == "cancelled" || dto.Status == "completed")
+        // The game server retries this report when the backend was slow/unreachable, so the same result can
+        // arrive more than once — only the request that claims the match applies gems, rating and quests.
+        if (await _matchService.TryClaimForFinishAsync(matchId) == null)
+            return Ok(new { message = "already_reported" });
+
         {
             match.Status = dto.Status;
             match.Result = dto.Result;

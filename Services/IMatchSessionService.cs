@@ -13,6 +13,8 @@ public interface IMatchSessionService
 
     Task UpdateStatusAsync(string matchId, string status, MatchResultData? result = null);
     Task UpdateProcessIdAsync(string matchId, int processId);
+    // Atomically moves a live (pending/active) match to "finishing"; null if it was already claimed or ended
+    Task<MatchSession?> TryClaimForFinishAsync(string matchId);
     Task DeleteAsync(string matchId);
     Task EndAllMatchesAsync();
 

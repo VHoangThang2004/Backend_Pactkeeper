@@ -25,6 +25,9 @@ public class MongoRepository<T> : IMongoRepository<T> where T : class
         await _collection.DeleteOneAsync(
             Builders<T>.Filter.Eq("_id", MongoDB.Bson.ObjectId.Parse(id)));
 
+    public async Task<T?> FindOneAndUpdateAsync(Expression<Func<T, bool>> filter, UpdateDefinition<T> update) =>
+        await _collection.FindOneAndUpdateAsync(filter, update);
+
     public async Task<List<T>> GetAllByFilterAsync(Expression<Func<T, bool>> filter) =>
         await _collection.Find(filter).ToListAsync();
 

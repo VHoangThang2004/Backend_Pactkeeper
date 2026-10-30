@@ -1,5 +1,6 @@
 using GameInventoryApi.Models;
 using GameInventoryApi.Repositories;
+using MongoDB.Driver;
 
 namespace GameInventoryApi.Services;
 
@@ -49,6 +50,11 @@ public class MatchSessionService : IMatchSessionService
         if (result != null) match.Result = result;
         await _repository.UpdateAsync(match.Id, match);
     }
+
+    public Task<MatchSession?> TryClaimForFinishAsync(string matchId)
+        => _repository.FindOneAndUpdateAsync(
+            m => m.MatchId == matchId && (m.Status == "pending" || m.Status == "active"),
+            Builders<MatchSession>.Update.Set(m => m.Status, "finishing"));
 
     public async Task UpdateProcessIdAsync(string matchId, int processId)
     {

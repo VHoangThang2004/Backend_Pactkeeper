@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 using GameInventoryApi.Hubs;
 using PayOS;
 using PayOS.Models.V2.PaymentRequests;
+using PayOS.Models.Webhooks;
 using System.Text.Json;
 
 namespace GameInventoryApi.Controllers;
@@ -153,13 +154,22 @@ public class PaymentController(
     // POST /api/payment/webhook  — called by PayOS, no player token
     [HttpPost("webhook")]
     [AllowAnonymous]
-    public async Task<IActionResult> PaymentWebhook([FromBody] JsonElement body)
+    public async Task<IActionResult> PaymentWebhook([FromBody] Webhook webhook)
     {
+        // Anonymous endpoint: only trust a body whose signature matches our PayOS ChecksumKey
+        if (_payOSClient == null) return BadRequest();
+        WebhookData data;
+        try { data = await _payOSClient.Webhooks.VerifyAsync(webhook); }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Webhook] Rejected unverified webhook: {ex.Message}");
+            return BadRequest();
+        }
+
         try
         {
-            var code = body.GetProperty("code").GetString();
-            var data = body.GetProperty("data");
-            var orderCode = data.GetProperty("orderCode").GetInt64();
+            var code = webhook.Code;
+            var orderCode = data.OrderCode;
 
             if (code == "00")
             {

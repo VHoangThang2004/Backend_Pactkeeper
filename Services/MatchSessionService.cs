@@ -78,23 +78,26 @@ public class MatchSessionService : IMatchSessionService
 
     public async Task TerminateMatchAsync(MatchSession match, string reason)
     {
-        _matchmakingService.TryKillServerProcess(match.ProcessId);
-        await _repository.DeleteAsync(match.Id);
-
-        // Release the port even if the process was already dead,
-        // unless another live match is (re)using it.
-        var portInUse = await _repository.GetByFilterAsync(m =>
-            m.ServerPort == match.ServerPort &&
-            (m.Status == "pending" || m.Status == "active"));
-        if (portInUse == null)
-            _matchmakingService.ReleasePort(match.ServerPort);
-
-        // Free the players: a leftover "matched" queue entry blocks re-queueing
+        // Free the players first: a leftover "matched" queue entry blocks re-queueing
         foreach (var playerId in new[] { match.Player1Id, match.Player2Id })
         {
             _presenceTracker.SetInMatch(playerId, false);
             await _queueService.RemoveByPlayerIdAsync(playerId);
         }
+
+        if (!_matchmakingService.StopMatchServer(match.ProcessId, match.MatchId))
+        {
+            // Its server still holds the port: keep the record (so the port stays reserved, even across a
+            // backend restart) as "stopping" — the reaper retries the kill every loop.
+            await _repository.FindOneAndUpdateAsync(m => m.Id == match.Id,
+                Builders<MatchSession>.Update.Set(m => m.Status, "stopping"));
+            Console.WriteLine($"[Match] Could not stop server PID={match.ProcessId} for match {match.MatchId} " +
+                              $"— port {match.ServerPort} kept, will retry. reason={reason}");
+            return;
+        }
+
+        await _repository.DeleteAsync(match.Id);
+        _matchmakingService.ReleasePort(match.ServerPort);
 
         Console.WriteLine($"[Match] Terminated match {match.MatchId} mode={match.Mode} " +
                           $"port={match.ServerPort} PID={match.ProcessId} reason={reason}");

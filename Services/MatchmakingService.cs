@@ -27,10 +27,30 @@ public class MatchmakingService : BackgroundService
         lock (_portLock)
         {
             foreach (var port in _serverConfig.GamePorts)
-                if (_activePorts.Add(port))
-                    return port;
+            {
+                if (_activePorts.Contains(port)) continue;
+                // Our bookkeeping can be wrong (orphan server from before a backend restart, failed kill):
+                // ask the OS too, or the new server fails to bind and the match is dead on arrival.
+                if (!IsUdpPortFree(port))
+                {
+                    Console.WriteLine($"[Matchmaking] Port {port} is free in bookkeeping but bound by another process — skipping.");
+                    continue;
+                }
+                _activePorts.Add(port);
+                return port;
+            }
             return -1;
         }
+    }
+
+    private static bool IsUdpPortFree(int port)
+    {
+        try
+        {
+            using var probe = new System.Net.Sockets.UdpClient(new System.Net.IPEndPoint(System.Net.IPAddress.Any, port));
+            return true;
+        }
+        catch (System.Net.Sockets.SocketException) { return false; }
     }
 
     public void ReleasePort(int port)
@@ -44,17 +64,30 @@ public class MatchmakingService : BackgroundService
         lock (_portLock) _activePorts.Add(port);
     }
 
-    // Only "is that PID still running" — no name check: on Linux ProcessName is truncated (15 chars),
-    // and a false "alive" just leaves the match to the max-age rule.
-    private static bool IsProcessAlive(int processId)
+    // Is this match's own server still running? On Linux the PID's command line must contain the matchId
+    // (every server is spawned with "-matchId <id>"), so a recycled PID never counts. Process names are
+    // useless there (truncated to 15 chars: "SRPG_SERVER.x86"). Anything we can't confirm counts as RUNNING:
+    // wrongly calling a live server dead frees its port while it still holds it.
+    public static bool IsMatchServerRunning(int processId, string matchId)
     {
         if (processId <= 0) return false;
+        if (OperatingSystem.IsLinux())
+        {
+            try { return File.ReadAllText($"/proc/{processId}/cmdline").Contains(matchId); }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return false; }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Matchmaking] Can't check PID {processId} ({ex.Message}) — assuming running.");
+                return true;
+            }
+        }
         try
         {
             using var process = System.Diagnostics.Process.GetProcessById(processId);
             return !process.HasExited;
         }
-        catch { return false; }
+        catch (ArgumentException) { return false; } // no such process
+        catch { return true; }
     }
 
     // -------------------------------------------------------
@@ -72,52 +105,35 @@ public class MatchmakingService : BackgroundService
         foreach (var match in await matchService.GetAllAsync())
         {
             var age = DateTime.UtcNow - match.CreatedAt;
-            if (age > MaxMatchAge)
+            if (match.Status == "stopping")
+                await matchService.TerminateMatchAsync(match, "retrying server stop");
+            else if (age > MaxMatchAge)
                 await matchService.TerminateMatchAsync(match, $"older than {MaxMatchAge.TotalMinutes} min");
             // ProcessId <= 0 = server not spawned by us (e.g. dev server in the Editor) — only the age rule applies
-            else if (age > SpawnGrace && match.ProcessId > 0 && !IsProcessAlive(match.ProcessId))
+            else if (age > SpawnGrace && match.ProcessId > 0 && !IsMatchServerRunning(match.ProcessId, match.MatchId))
                 await matchService.TerminateMatchAsync(match, "server process is gone");
             else
                 MarkPortInUse(match.ServerPort); // after a backend restart, live matches still own their ports
         }
     }
 
-    // Kills a headless match server process if it is still running.
-    // Verifies the process name matches the Unity server exe so a recycled PID
-    // (e.g. after a backend restart) never kills an unrelated process.
-    // Waits for exit so the UDP port is really free before it is reused.
-    public bool TryKillServerProcess(int processId)
+    // Stops this match's server if it is still running (only that exact process — see IsMatchServerRunning).
+    // Returns true once it is confirmed gone, i.e. its UDP port is really free; false if it is still running.
+    public bool StopMatchServer(int processId, string matchId)
     {
-        if (processId <= 0) return false;
+        if (!IsMatchServerRunning(processId, matchId)) return true;
         try
         {
             using var process = System.Diagnostics.Process.GetProcessById(processId);
-            if (process.HasExited) return false;
-
-            var expectedName = Path.GetFileNameWithoutExtension(_serverConfig.UnityServerExePath);
-            if (!string.IsNullOrEmpty(expectedName) &&
-                !string.Equals(process.ProcessName, expectedName, StringComparison.OrdinalIgnoreCase))
-            {
-                Console.WriteLine($"[Matchmaking] PID {processId} is '{process.ProcessName}', " +
-                                  $"not '{expectedName}' — skip kill.");
-                return false;
-            }
-
             process.Kill();
             process.WaitForExit(5000);
-            Console.WriteLine($"[Matchmaking] Killed server process {processId}");
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            // Process no longer running
-            return false;
+            Console.WriteLine($"[Matchmaking] Killed server process {processId} (match {matchId})");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Matchmaking] Failed to kill process {processId}: {ex.Message}");
-            return false;
         }
+        return !IsMatchServerRunning(processId, matchId);
     }
 
     // -------------------------------------------------------

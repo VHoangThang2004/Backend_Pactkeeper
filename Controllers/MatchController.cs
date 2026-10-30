@@ -1,7 +1,9 @@
 using GameInventoryApi.DTOs;
 using GameInventoryApi.Models;
 using GameInventoryApi.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using System.Text;
@@ -87,6 +89,29 @@ public class MatchController : ControllerBase
             data1 ?? new PlayerLoadoutDataDto(match.Player1Id, []),
             data2 ?? new PlayerLoadoutDataDto(match.Player2Id, [])
         ));
+    }
+
+    // Game server asks: is this connection token a real, unexpired login of a player in this match?
+    // Validated with the exact parameters the API's own JWT auth uses.
+    [HttpPost("{matchId}/verify-player")]
+    [Authorize(Roles = "Server")]
+    public async Task<ActionResult<VerifyPlayerResponseDto>> VerifyPlayer(
+        string matchId,
+        [FromBody] VerifyPlayerRequestDto dto,
+        [FromServices] IOptionsMonitor<JwtBearerOptions> jwtOptions)
+    {
+        var match = await _matchService.GetByMatchIdAsync(matchId);
+        if (match == null) return NotFound();
+
+        var parameters = jwtOptions.Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters;
+        var result = await new JsonWebTokenHandler().ValidateTokenAsync(dto.Token, parameters);
+        if (!result.IsValid) return Unauthorized(new { message = "invalid_token" });
+
+        var playerId = result.ClaimsIdentity.FindFirst("PlayerId")?.Value;
+        if (playerId == null || (playerId != match.Player1Id && playerId != match.Player2Id))
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "not_in_match" });
+
+        return Ok(new VerifyPlayerResponseDto(playerId));
     }
 
     [HttpGet("{matchId}/info")]

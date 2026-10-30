@@ -10,6 +10,9 @@ public record MatchSessionDto(
     string Mode
 );
 
+public record VerifyPlayerRequestDto(string Token);
+public record VerifyPlayerResponseDto(string PlayerId);
+
 public record MatchSessionJoinInfoDto(
     string MatchId,
     string ServerIp,

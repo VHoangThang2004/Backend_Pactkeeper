@@ -64,11 +64,12 @@ public class PaymentController(
                     Amount = pack.PriceVnd,
                     Description = rawDesc.Length > 25 ? rawDesc[..25] : rawDesc,
                     CancelUrl = dto.CancelUrl ?? "https://pactkeeper-web.vercel.app/payment/cancel",
-                    ReturnUrl = dto.ReturnUrl ?? "https://pactkeeper-web.vercel.app/payment/success"
+                    ReturnUrl = dto.ReturnUrl ?? "https://pactkeeper-web.vercel.app/payment/success",
+                    ExpiredAt = (int)DateTimeOffset.UtcNow.AddMinutes(15).ToUnixTimeSeconds()
                 };
                 var result = await _payOSClient.PaymentRequests.CreateAsync(request);
                 checkoutUrl = result.CheckoutUrl;
-                Console.WriteLine($"[Payment] Order {orderCode} for {playerId}, pack {pack.Name}, {pack.PriceVnd} VND");
+                Console.WriteLine($"[Payment] Order {orderCode} for {playerId}, pack {pack.Name}, {pack.PriceVnd} VND, ExpiredAt=+15m");
             }
             catch (Exception ex)
             {
@@ -82,7 +83,7 @@ public class PaymentController(
             Console.WriteLine($"[Payment-Mock] Order {orderCode} for {playerId}, pack {pack.Name}");
         }
 
-        await orderService.CreateOrderAsync(playerId, pack, orderCode);
+        await orderService.CreateOrderAsync(playerId, pack, orderCode, checkoutUrl);
 
         return Ok(new CreateOrderResponseDto(orderCode, checkoutUrl, "PENDING"));
     }
@@ -105,18 +106,34 @@ public class PaymentController(
             orders = await orderService.GetByPlayerIdAsync(playerId);
         }
 
-        // Active Reconciliation: If there are Pending orders and PayOS is connected, verify their real-time state
-        if (_payOSClient != null)
+        // Active Reconciliation & 15-Minute Expiration Verification
+        var pendingOrders = orders.Where(o => o.Status == PurchaseOrderStatus.Pending).ToList();
+        if (pendingOrders.Count > 0)
         {
-            var pendingOrders = orders.Where(o => o.Status == PurchaseOrderStatus.Pending).ToList();
-            if (pendingOrders.Count > 0)
+            bool anyChanged = false;
+            foreach (var po in pendingOrders)
             {
-                foreach (var po in pendingOrders)
+                // Check if order exceeded standard PayOS payment window (15 minutes)
+                if (DateTime.UtcNow - po.CreatedAt > TimeSpan.FromMinutes(15))
+                {
+                    if (_payOSClient != null)
+                    {
+                        try { await _payOSClient.PaymentRequests.CancelAsync(po.OrderCode, "EXPIRED: Payment window exceeded 15 minutes"); }
+                        catch { /* ignore if already cancelled or expired on PayOS */ }
+                    }
+                    await HandleOrderCancellationAsync(po.OrderCode, "EXPIRED (exceeded 15 minutes)");
+                    anyChanged = true;
+                }
+                else if (_payOSClient != null)
                 {
                     await SyncOrderFromPayOSAsync(po);
+                    anyChanged = true;
                 }
+            }
 
-                // Reload fresh orders after reconciliation
+            // Reload fresh orders after reconciliation
+            if (anyChanged)
+            {
                 if (isAdmin)
                 {
                     orders = await orderService.GetAllOrdersAsync();
@@ -144,7 +161,8 @@ public class PaymentController(
                 o.ConfirmedAt,
                 o.PlayerId,
                 o.TopUpPackId,
-                o.Id))
+                o.Id,
+                o.CheckoutUrl))
             .ToList();
 
         return Ok(result);
@@ -170,10 +188,48 @@ public class PaymentController(
                 o.ConfirmedAt,
                 o.PlayerId,
                 o.TopUpPackId,
-                o.Id))
+                o.Id,
+                o.CheckoutUrl))
             .ToList();
 
         return Ok(result);
+    }
+
+    // POST /api/payment/cancel-order/{orderCode} — Cancel a pending order immediately
+    [HttpPost("cancel-order/{orderCode}")]
+    public async Task<IActionResult> CancelOrder(long orderCode)
+    {
+        var order = await orderService.GetByOrderCodeAsync(orderCode);
+        if (order == null) return NotFound(new { message = "Order not found." });
+
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        var isAdmin = User.IsInRole("Admin");
+
+        if (!isAdmin && order.PlayerId != playerId)
+        {
+            return Forbid();
+        }
+
+        if (order.Status != PurchaseOrderStatus.Pending)
+        {
+            return BadRequest(new { message = $"Order is already {order.Status.ToString().ToLower()}." });
+        }
+
+        if (_payOSClient != null)
+        {
+            try
+            {
+                await _payOSClient.PaymentRequests.CancelAsync(orderCode, "Cancelled by user");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Payment-Cancel] PayOS Cancel error for {orderCode}: {ex.Message}");
+            }
+        }
+
+        await HandleOrderCancellationAsync(orderCode, "Cancelled by user");
+
+        return Ok(new { status = "CANCELLED", message = "Order cancelled successfully." });
     }
 
     // POST /api/payment/sync/{orderCode} — called by SDK frontend or client to actively reconcile an order
@@ -191,6 +247,18 @@ public class PaymentController(
         if (order.Status == PurchaseOrderStatus.Cancelled)
         {
             return Ok(new { status = "CANCELLED", message = "Order already cancelled." });
+        }
+
+        // Check if order exceeded standard 15-minute window
+        if (order.Status == PurchaseOrderStatus.Pending && DateTime.UtcNow - order.CreatedAt > TimeSpan.FromMinutes(15))
+        {
+            if (_payOSClient != null)
+            {
+                try { await _payOSClient.PaymentRequests.CancelAsync(orderCode, "EXPIRED: Payment window exceeded 15 minutes"); }
+                catch { }
+            }
+            await HandleOrderCancellationAsync(orderCode, "EXPIRED (exceeded 15 minutes)");
+            return Ok(new { status = "CANCELLED", message = "Order expired (exceeded 15 minutes)." });
         }
 
         if (_payOSClient != null)
@@ -370,5 +438,6 @@ public record TransactionHistoryDto(
     DateTime? ConfirmedAt,
     string PlayerId,
     string TopUpPackId,
-    string Id
+    string Id,
+    string? CheckoutUrl = null
 );

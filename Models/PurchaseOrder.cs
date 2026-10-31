@@ -22,6 +22,8 @@ public class PurchaseOrder
     public List<int> TrinketDefinitionIds { get; set; } = [];
     public List<int> UnitDefinitionIds { get; set; } = [];
 
+    public string? CheckoutUrl { get; set; }
+
     public PurchaseOrderStatus Status { get; set; } = PurchaseOrderStatus.Pending;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ConfirmedAt { get; set; }

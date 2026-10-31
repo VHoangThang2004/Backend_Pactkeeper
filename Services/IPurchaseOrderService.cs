@@ -4,7 +4,7 @@ namespace GameInventoryApi.Services;
 
 public interface IPurchaseOrderService
 {
-    Task<PurchaseOrder> CreateOrderAsync(string playerId, TopUpPack pack, long orderCode);
+    Task<PurchaseOrder> CreateOrderAsync(string playerId, TopUpPack pack, long orderCode, string? checkoutUrl = null);
     Task<PurchaseOrder?> GetByOrderCodeAsync(long orderCode);
     Task<List<PurchaseOrder>> GetByPlayerIdAsync(string playerId);
     Task<List<PurchaseOrder>> GetAllOrdersAsync();

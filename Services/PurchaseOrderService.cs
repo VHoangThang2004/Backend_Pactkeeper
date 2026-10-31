@@ -10,7 +10,7 @@ public class PurchaseOrderService : IPurchaseOrderService
     public PurchaseOrderService(IMongoRepository<PurchaseOrder> repository)
         => _repository = repository;
 
-    public async Task<PurchaseOrder> CreateOrderAsync(string playerId, TopUpPack pack, long orderCode)
+    public async Task<PurchaseOrder> CreateOrderAsync(string playerId, TopUpPack pack, long orderCode, string? checkoutUrl = null)
     {
         var order = new PurchaseOrder
         {
@@ -22,6 +22,7 @@ public class PurchaseOrderService : IPurchaseOrderService
             WeaponDefinitionIds = pack.WeaponDefinitionIds,
             TrinketDefinitionIds = pack.TrinketDefinitionIds,
             UnitDefinitionIds = pack.UnitDefinitionIds,
+            CheckoutUrl = checkoutUrl,
             Status = PurchaseOrderStatus.Pending,
             CreatedAt = DateTime.UtcNow,
         };

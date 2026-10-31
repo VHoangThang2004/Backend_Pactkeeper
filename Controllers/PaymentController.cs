@@ -105,6 +105,31 @@ public class PaymentController(
             orders = await orderService.GetByPlayerIdAsync(playerId);
         }
 
+        // Active Reconciliation: If there are Pending orders and PayOS is connected, verify their real-time state
+        if (_payOSClient != null)
+        {
+            var pendingOrders = orders.Where(o => o.Status == PurchaseOrderStatus.Pending).ToList();
+            if (pendingOrders.Count > 0)
+            {
+                foreach (var po in pendingOrders)
+                {
+                    await SyncOrderFromPayOSAsync(po);
+                }
+
+                // Reload fresh orders after reconciliation
+                if (isAdmin)
+                {
+                    orders = await orderService.GetAllOrdersAsync();
+                }
+                else
+                {
+                    var playerId = User.FindFirst("PlayerId")?.Value;
+                    if (playerId != null)
+                        orders = await orderService.GetByPlayerIdAsync(playerId);
+                }
+            }
+        }
+
         var result = orders
             .OrderByDescending(o => o.CreatedAt)
             .Select(o => new TransactionHistoryDto(
@@ -151,7 +176,66 @@ public class PaymentController(
         return Ok(result);
     }
 
-    // POST /api/payment/webhook  — called by PayOS, no player token
+    // POST /api/payment/sync/{orderCode} — called by SDK frontend or client to actively reconcile an order
+    [HttpPost("sync/{orderCode}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SyncOrder(long orderCode, [FromQuery] string? status)
+    {
+        var order = await orderService.GetByOrderCodeAsync(orderCode);
+        if (order == null) return NotFound(new { message = "Order not found." });
+
+        if (order.Status == PurchaseOrderStatus.Confirmed)
+        {
+            return Ok(new { status = "PAID", message = "Order already confirmed." });
+        }
+        if (order.Status == PurchaseOrderStatus.Cancelled)
+        {
+            return Ok(new { status = "CANCELLED", message = "Order already cancelled." });
+        }
+
+        if (_payOSClient != null)
+        {
+            try
+            {
+                var info = await _payOSClient.PaymentRequests.GetAsync(orderCode);
+                var payOSStatus = info.Status.ToString().ToUpperInvariant();
+                if (payOSStatus == "PAID")
+                {
+                    await HandleOrderConfirmationAsync(orderCode);
+                    return Ok(new { status = "PAID", message = "Order successfully verified and confirmed." });
+                }
+                else if (payOSStatus == "CANCELLED" || payOSStatus == "EXPIRED")
+                {
+                    await HandleOrderCancellationAsync(orderCode, payOSStatus);
+                    return Ok(new { status = "CANCELLED", message = "Order was cancelled or expired." });
+                }
+                return Ok(new { status = "PENDING", message = "Order is still pending on PayOS." });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Sync] PayOS GetAsync error: {ex.Message}");
+            }
+        }
+        else
+        {
+            // Mock fallback when testing without live PayOS credentials
+            if (string.Equals(status, "PAID", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "SUCCESS", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleOrderConfirmationAsync(orderCode);
+                return Ok(new { status = "PAID", message = "[Mock] Order confirmed in mock mode." });
+            }
+            else if (string.Equals(status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleOrderCancellationAsync(orderCode, "Cancelled in mock mode");
+                return Ok(new { status = "CANCELLED", message = "[Mock] Order cancelled in mock mode." });
+            }
+        }
+
+        return Ok(new { status = order.Status.ToString().ToUpperInvariant(), message = "Order status unchanged." });
+    }
+
+    // POST /api/payment/webhook — called by PayOS, no player token
     [HttpPost("webhook")]
     [AllowAnonymous]
     public async Task<IActionResult> PaymentWebhook([FromBody] Webhook webhook)
@@ -173,62 +257,15 @@ public class PaymentController(
 
             if (code == "00")
             {
-                var order = await orderService.GetByOrderCodeAsync(orderCode);
-                if (order == null)
+                var success = await HandleOrderConfirmationAsync(orderCode);
+                if (!success)
                 {
-                    Console.WriteLine($"[Webhook] Order {orderCode} not found.");
-                    return Ok();
-                }
-
-                var confirmed = await orderService.ConfirmOrderAsync(orderCode);
-                if (confirmed)
-                {
-                    if (order.GemsAmount > 0)
-                        await profileService.AddGemsAsync(order.PlayerId, order.GemsAmount);
-
-                    await profileService.GrantItemsAsync(
-                        order.PlayerId,
-                        order.UnitDefinitionIds,
-                        order.WeaponDefinitionIds,
-                        order.TrinketDefinitionIds);
-
-                    Console.WriteLine($"[Webhook] Order {orderCode} confirmed → {order.PlayerId}: +{order.GemsAmount} gems, {order.UnitDefinitionIds.Count} units, {order.WeaponDefinitionIds.Count} weapons, {order.TrinketDefinitionIds.Count} trinkets");
-
-                    await actionService.LogActionAsync(order.PlayerId, "Purchase", order.Id, new Dictionary<string, object>
-                    {
-                        ["packId"] = order.TopUpPackId,
-                        ["gemsAmount"] = order.GemsAmount,
-                    });
-
-                    await notificationService.CreateNotificationAsync(
-                        order.PlayerId,
-                        "success",
-                        "Tribute Accepted",
-                        $"Your offering of {order.Amount:N0} VND has been received. {order.GemsAmount} Gems added to your treasury."
-                    );
-
-                    await hubContext.Clients.Group(order.PlayerId).SendAsync("ReceiveProfileUpdate");
-                }
-                else
-                {
-                    Console.WriteLine($"[Webhook] Order {orderCode} already processed, skipping.");
+                    Console.WriteLine($"[Webhook] Order {orderCode} already processed or not found.");
                 }
             }
             else
             {
-                var order = await orderService.GetByOrderCodeAsync(orderCode);
-                await orderService.CancelOrderAsync(orderCode);
-                Console.WriteLine($"[Webhook] Order {orderCode} cancelled (code={code}).");
-
-                if (order != null)
-                {
-                    await notificationService.CreateNotificationAsync(
-                        order.PlayerId,
-                        "error",
-                        "Pact Failed",
-                        $"The magical transaction for {order.Amount:N0} VND was disrupted. Please try another tribute method."
-                    );
-                }
+                await HandleOrderCancellationAsync(orderCode, $"webhook code={code}");
             }
         }
         catch (Exception ex)
@@ -238,6 +275,84 @@ public class PaymentController(
         }
 
         return Ok();
+    }
+
+    private async Task<bool> HandleOrderConfirmationAsync(long orderCode)
+    {
+        var order = await orderService.GetByOrderCodeAsync(orderCode);
+        if (order == null) return false;
+
+        var confirmed = await orderService.ConfirmOrderAsync(orderCode);
+        if (!confirmed) return false;
+
+        if (order.GemsAmount > 0)
+            await profileService.AddGemsAsync(order.PlayerId, order.GemsAmount);
+
+        await profileService.GrantItemsAsync(
+            order.PlayerId,
+            order.UnitDefinitionIds,
+            order.WeaponDefinitionIds,
+            order.TrinketDefinitionIds);
+
+        Console.WriteLine($"[Payment-Confirmed] Order {orderCode} confirmed → {order.PlayerId}: +{order.GemsAmount} gems, {order.UnitDefinitionIds.Count} units, {order.WeaponDefinitionIds.Count} weapons, {order.TrinketDefinitionIds.Count} trinkets");
+
+        await actionService.LogActionAsync(order.PlayerId, "Purchase", order.Id, new Dictionary<string, object>
+        {
+            ["packId"] = order.TopUpPackId,
+            ["gemsAmount"] = order.GemsAmount,
+        });
+
+        await notificationService.CreateNotificationAsync(
+            order.PlayerId,
+            "success",
+            "Tribute Accepted",
+            $"Your offering of {order.Amount:N0} VND has been received. {order.GemsAmount} Gems added to your treasury."
+        );
+
+        await hubContext.Clients.Group(order.PlayerId).SendAsync("ReceiveProfileUpdate");
+        return true;
+    }
+
+    private async Task HandleOrderCancellationAsync(long orderCode, string reason = "")
+    {
+        var order = await orderService.GetByOrderCodeAsync(orderCode);
+        if (order == null || order.Status != PurchaseOrderStatus.Pending) return;
+
+        await orderService.CancelOrderAsync(orderCode);
+        Console.WriteLine($"[Payment-Cancelled] Order {orderCode} cancelled ({reason}).");
+
+        await notificationService.CreateNotificationAsync(
+            order.PlayerId,
+            "error",
+            "Pact Failed",
+            $"The magical transaction for {order.Amount:N0} VND was disrupted or cancelled. Please try another tribute method."
+        );
+    }
+
+    private async Task SyncOrderFromPayOSAsync(PurchaseOrder order)
+    {
+        if (order.Status != PurchaseOrderStatus.Pending || _payOSClient == null) return;
+
+        try
+        {
+            var paymentInfo = await _payOSClient.PaymentRequests.GetAsync(order.OrderCode);
+            if (paymentInfo != null)
+            {
+                var status = paymentInfo.Status.ToString().ToUpperInvariant();
+                if (status == "PAID")
+                {
+                    await HandleOrderConfirmationAsync(order.OrderCode);
+                }
+                else if (status == "CANCELLED" || status == "EXPIRED")
+                {
+                    await HandleOrderCancellationAsync(order.OrderCode, status);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[PayOS-Sync] Order {order.OrderCode} sync check error: {ex.Message}");
+        }
     }
 }
 
@@ -253,7 +368,7 @@ public record TransactionHistoryDto(
     string Status,
     DateTime CreatedAt,
     DateTime? ConfirmedAt,
-    string? PlayerId = null,
-    string? PackId = null,
-    string? Id = null
+    string PlayerId,
+    string TopUpPackId,
+    string Id
 );

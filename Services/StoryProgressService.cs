@@ -197,11 +197,17 @@ public class StoryProgressService : IStoryProgressService
 
         var existingChapterProg = all.FirstOrDefault(p => p.ChapterId == targetChapterId);
 
+        int firstSceneId = chapterCfg.Scenes.OrderBy(s => s.SceneId).First().SceneId;
+        int firstBattleSceneId = chapterCfg.Scenes
+            .Where(s => s.Type == SceneType.Battle)
+            .OrderBy(s => s.SceneId)
+            .Select(s => (int?)s.SceneId)
+            .FirstOrDefault() ?? firstSceneId;
+
         if (existingChapterProg == null)
         {
-            int firstSceneId = chapterCfg.Scenes.OrderBy(s => s.SceneId).First().SceneId;
-            if (targetSceneId != firstSceneId)
-                return (null, $"Must start Chapter {targetChapterId} from Scene {firstSceneId}.");
+            if (targetSceneId != firstSceneId && targetSceneId != firstBattleSceneId)
+                return (null, $"Must start Chapter {targetChapterId} from Scene {firstBattleSceneId}.");
 
             var newChapterProg = new StoryProgress
             {
@@ -225,9 +231,10 @@ public class StoryProgressService : IStoryProgressService
             return (existingChapterProg, null);
         }
 
-        int unlockedSceneHighWaterMark = existingChapterProg.IsCompleted
+        int rawHighWaterMark = existingChapterProg.IsCompleted
             ? existingChapterProg.SceneId + 1
             : existingChapterProg.SceneId;
+        int unlockedSceneHighWaterMark = Math.Max(firstBattleSceneId, rawHighWaterMark);
 
         if (targetSceneId > unlockedSceneHighWaterMark)
             return (null, $"Scene {targetChapterId}.{targetSceneId} is not unlocked yet.");

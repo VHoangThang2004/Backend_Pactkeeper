@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace GameInventoryApi.Hubs;
@@ -8,9 +9,15 @@ namespace GameInventoryApi.Hubs;
 [Authorize]
 public class SupportHub : Hub
 {
+    private static bool IsStaff(ClaimsPrincipal? user) =>
+        user?.IsInRole("Admin") == true ||
+        user?.IsInRole("Technical Support") == true ||
+        user?.IsInRole("Support") == true ||
+        user?.IsInRole("Moderator") == true;
+
     public override async Task OnConnectedAsync()
     {
-        if (Context.User?.IsInRole("Admin") == true)
+        if (IsStaff(Context.User))
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, "Admins");
         }
@@ -28,7 +35,7 @@ public class SupportHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        if (Context.User?.IsInRole("Admin") == true)
+        if (IsStaff(Context.User))
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, "Admins");
         }

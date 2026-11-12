@@ -239,8 +239,14 @@ public class StoryProgressService : IStoryProgressService
         if (targetSceneId > unlockedSceneHighWaterMark)
             return (null, $"Scene {targetChapterId}.{targetSceneId} is not unlocked yet.");
 
-        existingChapterProg.SceneId = targetSceneId;
-        existingChapterProg.IsCompleted = false;
+        // Only advance existingChapterProg.SceneId forward (e.g. moving from a completed scene to SceneId+1).
+        // If the player is replaying an earlier already-completed scene within the current incomplete chapter
+        // (targetSceneId < existingChapterProg.SceneId), preserve their highest unlocked frontier SceneId.
+        if (targetSceneId >= existingChapterProg.SceneId)
+        {
+            existingChapterProg.SceneId = targetSceneId;
+            existingChapterProg.IsCompleted = false;
+        }
         existingChapterProg.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateAsync(existingChapterProg.Id, existingChapterProg);
 

@@ -185,7 +185,7 @@ public class MatchController : ControllerBase
 
     [HttpGet("log-files")]
     [Authorize(Roles = "Admin,Server,Technical Support,Support,Moderator")]
-    public ActionResult<List<MatchLogFileInfo>> GetAvailableLogFiles()
+    public ActionResult<List<MatchLogFileInfo>> GetAvailableLogFiles([FromQuery] int? limit = null)
     {
         var localPath = _serverConfig.LocalPath;
         if (string.IsNullOrWhiteSpace(localPath) || !Directory.Exists(localPath))
@@ -196,9 +196,10 @@ public class MatchController : ControllerBase
         try
         {
             var dir = new DirectoryInfo(localPath);
-            var files = dir.GetFiles("*.log")
-                .OrderByDescending(f => f.LastWriteTimeUtc)
-                .Take(50)
+            var query = dir.GetFiles("*.log")
+                .OrderByDescending(f => f.LastWriteTimeUtc);
+
+            var files = (limit.HasValue && limit.Value > 0 ? query.Take(limit.Value) : (limit.HasValue && limit.Value <= 0 ? query : query.Take(200)))
                 .Select(f => new MatchLogFileInfo(
                     MatchId: Path.GetFileNameWithoutExtension(f.Name),
                     FileName: f.Name,

@@ -176,7 +176,7 @@ public static class SeedData
                         Description = "3.2 - The Unifier's Trial",
                         MapId = "MD_PVE_C3S2",
                         AutoResume = false,
-                        AutoAdvance = true
+                        AutoAdvance = false
                     },
                 }
             }

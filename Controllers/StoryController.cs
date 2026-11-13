@@ -59,89 +59,19 @@ public class StoryController : ControllerBase
 
     // -------------------------------------------------------
     // POST /api/story/progress/complete
-    // Optional query params (?chapterId=X&sceneId=Y) guard against double-advancing
-    // when the headless server's /progress/battle-complete already completed the scene.
+    // No body. Client says "I finished this scene."
     // -------------------------------------------------------
     [HttpPost("progress/complete")]
     [Authorize(Roles = "Player")]
-    public async Task<ActionResult<CurrentProgressDto>> CompleteScene(
-        [FromQuery] int? chapterId = null,
-        [FromQuery] int? sceneId = null)
+    public async Task<ActionResult<CurrentProgressDto>> CompleteScene()
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
         if (playerId == null) return Unauthorized();
 
-        // Replay guard: if the caller specifies a chapterId that is already completed
-        // (e.g. replaying C0_S2 while active story progress is at C1_S2), terminate the
-        // replay match and return the completed replay state instead of returning/advancing
-        // the active incomplete chapter (C1_S2).
-        if (chapterId.HasValue)
-        {
-            bool targetChapterAlreadyDone = await _storyService.IsChapterCompletedAsync(playerId, chapterId.Value);
-            if (targetChapterAlreadyDone)
-            {
-                await TerminateStoryMatchesAsync(playerId, $"completed replay C{chapterId.Value}_S{sceneId ?? 0}");
-                return Ok(new CurrentProgressDto(
-                    chapterId.Value,
-                    sceneId ?? 0,
-                    true,
-                    true,
-                    "None",
-                    false,
-                    false
-                ));
-            }
-        }
-
         var current = await _storyService.GetCurrentAsync(playerId);
 
-        // Idempotency guard: if the caller specifies (chapterId, sceneId) and the server's
-        // /battle-complete already advanced progress past that scene (or completed the chapter),
-        // return the current state without completing the NEW scene by mistake.
-        if (chapterId.HasValue && sceneId.HasValue)
-        {
-            bool alreadyPastTarget =
-                current.IsChapterCompleted ||
-                current.ChapterId != chapterId.Value ||
-                current.SceneId != sceneId.Value;
-
-            if (alreadyPastTarget)
-            {
-                await TerminateStoryMatchesAsync(playerId, $"cleanup completed C{chapterId.Value}_S{sceneId.Value}");
-                var curScene = current.IsChapterCompleted
-                    ? null
-                    : await _chapterConfigService.GetSceneAsync(current.ChapterId, current.SceneId);
-
-                return Ok(new CurrentProgressDto(
-                    current.ChapterId,
-                    current.SceneId,
-                    current.IsCompleted,
-                    current.IsChapterCompleted,
-                    curScene?.Type.ToString() ?? "None",
-                    curScene?.AutoResume ?? false,
-                    false
-                ));
-            }
-        }
-
         if (current.IsCompleted)
-        {
-            var curScene = await _chapterConfigService.GetSceneAsync(current.ChapterId, current.SceneId);
-            if (chapterId.HasValue && sceneId.HasValue)
-            {
-                await TerminateStoryMatchesAsync(playerId, $"cleanup completed C{current.ChapterId}_S{current.SceneId}");
-                return Ok(new CurrentProgressDto(
-                    current.ChapterId,
-                    current.SceneId,
-                    current.IsCompleted,
-                    current.IsChapterCompleted,
-                    curScene?.Type.ToString() ?? "None",
-                    curScene?.AutoResume ?? false,
-                    false
-                ));
-            }
             return BadRequest("Scene already completed. Call /next to continue.");
-        }
 
         var scene = await _chapterConfigService.GetSceneAsync(
             current.ChapterId, current.SceneId);
@@ -220,34 +150,11 @@ public class StoryController : ControllerBase
     {
         var current = await _storyService.GetCurrentAsync(dto.PlayerId);
 
-        if (current.IsChapterCompleted)
-            return Ok(new CurrentProgressDto(
-                current.ChapterId, current.SceneId,
-                current.IsCompleted, current.IsChapterCompleted,
-                "None", false, false));
-
         var scene = await _chapterConfigService.GetSceneAsync(
             current.ChapterId, current.SceneId);
 
         if (scene == null)
             return NotFound("Scene config not found.");
-
-        // Replay guard for headless server: if the server specifies (ChapterId, SceneId) or if the
-        // active story MatchSession's MapId does not match the player's current frontier scene's MapId
-        // (e.g. player replayed C0_S2 while active progress is at C1_S2), do NOT advance C1_S2!
-        var activeMatch = await _matchService.GetActiveMatchByPlayerIdAsync(dto.PlayerId);
-        bool mismatchByDto = (dto.ChapterId.HasValue && dto.ChapterId.Value != current.ChapterId) ||
-                             (dto.SceneId.HasValue && dto.SceneId.Value != current.SceneId);
-        bool mismatchByMap = activeMatch != null &&
-                             activeMatch.Mode == "story" &&
-                             !string.IsNullOrEmpty(scene.MapId) &&
-                             !string.IsNullOrEmpty(activeMatch.MapId) &&
-                             !string.Equals(activeMatch.MapId, scene.MapId, StringComparison.OrdinalIgnoreCase);
-
-        if (mismatchByDto || mismatchByMap)
-        {
-            return Ok(ToDto(new AdvanceResult(current, scene, false)));
-        }
 
         if (scene.Type != SceneType.Battle)
             return BadRequest("Current scene is not a battle.");
@@ -467,7 +374,7 @@ public record CurrentProgressDto(
     bool AdvancedFromPrev // (optional) true if this response is the result of an auto-advance
 );
 public record StoryProgressDto(int ChapterId, int SceneId, bool IsCompleted, bool IsChapterCompleted);
-public record BattleCompleteDto(string PlayerId, int? ChapterId = null, int? SceneId = null);
+public record BattleCompleteDto(string PlayerId);
 public record StoryMatchResponseDto(string MatchId, string ServerIp, int ServerPort);
 public record SelectStoryMatchRequestDto(int ChapterId, int SceneId, bool AutoResume = false);
 public record StoryMatchSelectResponseDto(

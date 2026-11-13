@@ -21,24 +21,49 @@ public class StoryProgressService : IStoryProgressService
 
     // Entry point on every login.
     // New player: creates Chapter 0 Scene 0 isCompleted=false.
-    // Returning player: returns their current active scene.
+    // Returning player: returns their single furthest/current StoryProgress document.
     public async Task<StoryProgress> GetCurrentAsync(string playerId)
     {
         var all = await _repository.GetAllByFilterAsync(p => p.PlayerId == playerId);
 
-        // Return earliest incomplete chapter
-        var current = all
-            .Where(p => !p.IsChapterCompleted)
-            .OrderBy(p => p.ChapterId)
-            .FirstOrDefault();
-
-        if (current != null)
-            return current;
-
-        // All existing chapters are completed — return the last completed one
-        // so callers can read IsChapterCompleted=true without creating a new document
         if (all.Count > 0)
-            return all.OrderByDescending(p => p.ChapterId).First();
+        {
+            var current = all
+                .OrderByDescending(p => p.ChapterId)
+                .ThenByDescending(p => p.SceneId)
+                .First();
+
+            // Clean up any legacy per-chapter duplicate documents so each user strictly has 1 record
+            if (all.Count > 1)
+            {
+                foreach (var stale in all.Where(p => p.Id != current.Id))
+                {
+                    await _repository.DeleteAsync(stale.Id);
+                }
+            }
+
+            // Migrate legacy completed-chapter state if AutoAdvance=true and a next chapter exists
+            if (current.IsChapterCompleted)
+            {
+                var curScene = await _chapterConfigService.GetSceneAsync(current.ChapterId, current.SceneId);
+                if (curScene == null || curScene.AutoAdvance)
+                {
+                    var nextChapter = await _chapterConfigService.GetByChapterIdAsync(current.ChapterId + 1);
+                    var firstNextScene = nextChapter?.Scenes.OrderBy(s => s.SceneId).FirstOrDefault();
+                    if (firstNextScene != null)
+                    {
+                        current.ChapterId = nextChapter!.ChapterId;
+                        current.SceneId = firstNextScene.SceneId;
+                        current.IsCompleted = false;
+                        current.IsChapterCompleted = false;
+                        current.UpdatedAt = DateTime.UtcNow;
+                        await _repository.UpdateAsync(current.Id, current);
+                    }
+                }
+            }
+
+            return current;
+        }
 
         // No progress at all — new player, create Chapter 0 Scene 0
         var newProgress = new StoryProgress
@@ -70,21 +95,12 @@ public class StoryProgressService : IStoryProgressService
     }
 
     // Complete current scene; if completedScene.AutoAdvance, also move to the next scene
-    // (or mark the chapter complete). The final state is computed in memory and persisted
-    // with ONE UpdateAsync, so there is no half-done state (completed but not advanced).
+    // (or the first scene of the next chapter). The final state is computed in memory and persisted
+    // with ONE UpdateAsync on the player's single StoryProgress document.
     public async Task<AdvanceResult> CompleteAndAdvanceAsync(string playerId, SceneConfig completedScene)
     {
         var current = await GetCurrentAsync(playerId);
         var now = DateTime.UtcNow;
-
-        current.IsCompleted = true;
-        current.UpdatedAt = now;
-
-        if (!completedScene.AutoAdvance)
-        {
-            await _repository.UpdateAsync(current.Id, current);
-            return new AdvanceResult(current, completedScene, false);
-        }
 
         var chapter = await _chapterConfigService.GetByChapterIdAsync(current.ChapterId);
         var nextScene = chapter?.Scenes
@@ -92,16 +108,68 @@ public class StoryProgressService : IStoryProgressService
             .OrderBy(s => s.SceneId)
             .FirstOrDefault();
 
+        current.IsCompleted = true;
+        current.UpdatedAt = now;
+
+        if (!completedScene.AutoAdvance)
+        {
+            if (nextScene == null)
+            {
+                current.IsChapterCompleted = true;
+                current.CompletedAt = now;
+            }
+
+            await _repository.UpdateAsync(current.Id, current);
+
+            if (nextScene == null)
+            {
+                await _actionService.LogActionAsync(playerId, "StoryProgress", current.Id, new Dictionary<string, object>
+                {
+                    ["chapterId"] = current.ChapterId,
+                    ["sceneId"] = current.SceneId,
+                    ["isChapterComplete"] = true,
+                });
+            }
+
+            return new AdvanceResult(current, completedScene, false);
+        }
+
         if (nextScene == null)
         {
+            int completedChapterId = current.ChapterId;
+            int completedSceneId = current.SceneId;
+
+            var nextChapter = await _chapterConfigService.GetByChapterIdAsync(completedChapterId + 1);
+            var firstNextChapterScene = nextChapter?.Scenes
+                .OrderBy(s => s.SceneId)
+                .FirstOrDefault();
+
+            if (firstNextChapterScene != null)
+            {
+                current.ChapterId = nextChapter!.ChapterId;
+                current.SceneId = firstNextChapterScene.SceneId;
+                current.IsCompleted = false;
+                current.IsChapterCompleted = false;
+                await _repository.UpdateAsync(current.Id, current);
+
+                await _actionService.LogActionAsync(playerId, "StoryProgress", current.Id, new Dictionary<string, object>
+                {
+                    ["chapterId"] = completedChapterId,
+                    ["sceneId"] = completedSceneId,
+                    ["isChapterComplete"] = true,
+                });
+
+                return new AdvanceResult(current, firstNextChapterScene, true);
+            }
+
             current.IsChapterCompleted = true;
             current.CompletedAt = now;
             await _repository.UpdateAsync(current.Id, current);
 
             await _actionService.LogActionAsync(playerId, "StoryProgress", current.Id, new Dictionary<string, object>
             {
-                ["chapterId"] = current.ChapterId,
-                ["sceneId"] = current.SceneId,
+                ["chapterId"] = completedChapterId,
+                ["sceneId"] = completedSceneId,
                 ["isChapterComplete"] = true,
             });
 
@@ -110,6 +178,7 @@ public class StoryProgressService : IStoryProgressService
 
         current.SceneId = nextScene.SceneId;
         current.IsCompleted = false;
+        current.IsChapterCompleted = false;
         await _repository.UpdateAsync(current.Id, current);
         return new AdvanceResult(current, nextScene, true);
     }
@@ -121,11 +190,11 @@ public class StoryProgressService : IStoryProgressService
     {
         var current = await GetCurrentAsync(playerId);
 
-        // Must be completed but chapter not yet marked done
-        if (!current.IsCompleted || current.IsChapterCompleted)
+        // Must be completed
+        if (!current.IsCompleted)
             return null;
 
-        // Find next scene in chapter config
+        // Find next scene in current chapter config
         var chapter = await _chapterConfigService.GetByChapterIdAsync(current.ChapterId);
         var nextScene = chapter?.Scenes
             .Where(s => s.SceneId > current.SceneId)
@@ -134,18 +203,40 @@ public class StoryProgressService : IStoryProgressService
 
         if (nextScene == null)
         {
-            // No more scenes — mark chapter complete
-            current.IsChapterCompleted = true;
-            current.CompletedAt = DateTime.UtcNow;
-            current.UpdatedAt = DateTime.UtcNow;
-            await _repository.UpdateAsync(current.Id, current);
+            int completedChapterId = current.ChapterId;
+            int completedSceneId = current.SceneId;
 
-            await _actionService.LogActionAsync(playerId, "StoryProgress", current.Id, new Dictionary<string, object>
+            var nextChapter = await _chapterConfigService.GetByChapterIdAsync(completedChapterId + 1);
+            var firstNextChapterScene = nextChapter?.Scenes
+                .OrderBy(s => s.SceneId)
+                .FirstOrDefault();
+
+            if (firstNextChapterScene != null)
             {
-                ["chapterId"] = current.ChapterId,
-                ["sceneId"] = current.SceneId,
-                ["isChapterComplete"] = true,
-            });
+                current.ChapterId = nextChapter!.ChapterId;
+                current.SceneId = firstNextChapterScene.SceneId;
+                current.IsCompleted = false;
+                current.IsChapterCompleted = false;
+                current.UpdatedAt = DateTime.UtcNow;
+                await _repository.UpdateAsync(current.Id, current);
+                return current;
+            }
+
+            // No more chapters — mark final chapter complete
+            if (!current.IsChapterCompleted)
+            {
+                current.IsChapterCompleted = true;
+                current.CompletedAt = DateTime.UtcNow;
+                current.UpdatedAt = DateTime.UtcNow;
+                await _repository.UpdateAsync(current.Id, current);
+
+                await _actionService.LogActionAsync(playerId, "StoryProgress", current.Id, new Dictionary<string, object>
+                {
+                    ["chapterId"] = completedChapterId,
+                    ["sceneId"] = completedSceneId,
+                    ["isChapterComplete"] = true,
+                });
+            }
 
             return current;
         }
@@ -153,26 +244,29 @@ public class StoryProgressService : IStoryProgressService
         // Move to next scene — set isCompleted=false so client runs it immediately
         current.SceneId = nextScene.SceneId;
         current.IsCompleted = false;
+        current.IsChapterCompleted = false;
         current.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateAsync(current.Id, current);
         return current;
     }
 
     public async Task<List<StoryProgress>> GetAllAsync(string playerId)
-        => await _repository.GetAllByFilterAsync(p => p.PlayerId == playerId);
+    {
+        var current = await GetCurrentAsync(playerId);
+        return [current];
+    }
 
     public async Task<bool> IsChapterCompletedAsync(string playerId, int chapterId)
     {
-        var progress = await _repository.GetByFilterAsync(
-            p => p.PlayerId == playerId && p.ChapterId == chapterId);
-        return progress?.IsChapterCompleted ?? false;
+        var current = await GetCurrentAsync(playerId);
+        return current.ChapterId > chapterId ||
+               (current.ChapterId == chapterId && current.IsChapterCompleted);
     }
 
     public async Task<int> GetMaxCompletedChapterIdAsync(string playerId)
     {
-        var all = await _repository.GetAllByFilterAsync(p => p.PlayerId == playerId);
-        var completedChapters = all.Where(p => p.IsChapterCompleted).Select(p => p.ChapterId).ToList();
-        return completedChapters.Count > 0 ? completedChapters.Max() : -1;
+        var current = await GetCurrentAsync(playerId);
+        return current.IsChapterCompleted ? current.ChapterId : current.ChapterId - 1;
     }
 
     public async Task<(StoryProgress? Progress, string? Error)> PrepareSelectedSceneAsync(
@@ -186,16 +280,15 @@ public class StoryProgressService : IStoryProgressService
         if (sceneCfg == null)
             return (null, $"Scene {targetSceneId} not found in Chapter {targetChapterId}.");
 
-        var all = await _repository.GetAllByFilterAsync(p => p.PlayerId == playerId);
-        int maxCompletedChapterId = all
-            .Where(p => p.IsChapterCompleted)
-            .Select(p => (int?)p.ChapterId)
-            .Max() ?? -1;
+        var current = await GetCurrentAsync(playerId);
 
-        if (targetChapterId > maxCompletedChapterId + 1)
+        if (targetChapterId > current.ChapterId)
             return (null, $"Chapter {targetChapterId} is still locked.");
 
-        var existingChapterProg = all.FirstOrDefault(p => p.ChapterId == targetChapterId);
+        // Replaying an earlier already-completed chapter (or any chapter after all chapters are completed)
+        // does not mutate the player's current StoryProgress document.
+        if (targetChapterId < current.ChapterId || current.IsChapterCompleted)
+            return (current, null);
 
         int firstSceneId = chapterCfg.Scenes.OrderBy(s => s.SceneId).First().SceneId;
         int firstBattleSceneId = chapterCfg.Scenes
@@ -204,52 +297,25 @@ public class StoryProgressService : IStoryProgressService
             .Select(s => (int?)s.SceneId)
             .FirstOrDefault() ?? firstSceneId;
 
-        if (existingChapterProg == null)
-        {
-            if (targetSceneId != firstSceneId && targetSceneId != firstBattleSceneId)
-                return (null, $"Must start Chapter {targetChapterId} from Scene {firstBattleSceneId}.");
-
-            var newChapterProg = new StoryProgress
-            {
-                PlayerId = playerId,
-                ChapterId = targetChapterId,
-                SceneId = targetSceneId,
-                IsCompleted = false,
-                IsChapterCompleted = false,
-                StartedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            await _repository.CreateAsync(newChapterProg);
-            return (newChapterProg, null);
-        }
-
-        if (existingChapterProg.IsChapterCompleted)
-        {
-            existingChapterProg.UpdatedAt = DateTime.UtcNow;
-            await _repository.UpdateAsync(existingChapterProg.Id, existingChapterProg);
-            return (existingChapterProg, null);
-        }
-
-        int rawHighWaterMark = existingChapterProg.IsCompleted
-            ? existingChapterProg.SceneId + 1
-            : existingChapterProg.SceneId;
+        int rawHighWaterMark = current.IsCompleted
+            ? current.SceneId + 1
+            : current.SceneId;
         int unlockedSceneHighWaterMark = Math.Max(firstBattleSceneId, rawHighWaterMark);
 
         if (targetSceneId > unlockedSceneHighWaterMark)
             return (null, $"Scene {targetChapterId}.{targetSceneId} is not unlocked yet.");
 
-        // Only advance existingChapterProg.SceneId forward (e.g. moving from a completed scene to SceneId+1).
-        // If the player is replaying an earlier already-completed scene within the current incomplete chapter
-        // (targetSceneId < existingChapterProg.SceneId), preserve their highest unlocked frontier SceneId.
-        if (targetSceneId >= existingChapterProg.SceneId)
+        // Only advance current.SceneId forward if the current scene was completed with AutoAdvance=false
+        // and the player is starting the next unlocked scene. Replaying an earlier scene (targetSceneId < current.SceneId)
+        // leaves current progress untouched.
+        if (targetSceneId > current.SceneId)
         {
-            existingChapterProg.SceneId = targetSceneId;
-            existingChapterProg.IsCompleted = false;
+            current.SceneId = targetSceneId;
+            current.IsCompleted = false;
+            current.UpdatedAt = DateTime.UtcNow;
+            await _repository.UpdateAsync(current.Id, current);
         }
-        existingChapterProg.UpdatedAt = DateTime.UtcNow;
-        await _repository.UpdateAsync(existingChapterProg.Id, existingChapterProg);
 
-        return (existingChapterProg, null);
+        return (current, null);
     }
 }

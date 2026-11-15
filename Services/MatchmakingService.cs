@@ -91,30 +91,112 @@ public class MatchmakingService : BackgroundService
     }
 
     // -------------------------------------------------------
-    // Reaper — ends matches whose server crashed, never reported, or ran far past the 60-min match cap
+    // Reaper — one-sided.
+    //   RECORDS are removed only by: the game server's report, admin end-all, or the hard age limit.
+    //   A missing process is NOT a reason to drop a record: anything else sharing the DB (another backend)
+    //   can't see our processes and would wrongly call live matches dead.
+    //   PROCESSES on this machine are killed when they have no record (orphans) — see KillOrphanServers.
     // -------------------------------------------------------
 
-    private static readonly TimeSpan SpawnGrace = TimeSpan.FromSeconds(30); // ProcessId is written just after creation
-    private static readonly TimeSpan MaxMatchAge = TimeSpan.FromMinutes(75);
+    private static readonly TimeSpan MaxMatchAge = TimeSpan.FromMinutes(60);
+
+    // PIDs seen without a record on the previous sweep — killed only if still orphaned on the next one,
+    // so a single odd DB read can never take a live server down
+    private readonly HashSet<int> _orphanSuspects = new();
 
     private async Task ReapDeadMatches()
     {
         using var scope = _scopeFactory.CreateScope();
         var matchService = scope.ServiceProvider.GetRequiredService<IMatchSessionService>();
 
-        foreach (var match in await matchService.GetAllAsync())
+        // Throws if the DB is unreachable → the loop catches it and nothing is killed this round
+        var matches = await matchService.GetAllAsync();
+
+        foreach (var match in matches)
         {
             var age = DateTime.UtcNow - match.CreatedAt;
             if (match.Status == "stopping")
                 await matchService.TerminateMatchAsync(match, "retrying server stop");
             else if (age > MaxMatchAge)
-                await matchService.TerminateMatchAsync(match, $"older than {MaxMatchAge.TotalMinutes} min");
-            // ProcessId <= 0 = server not spawned by us (e.g. dev server in the Editor) — only the age rule applies
-            else if (age > SpawnGrace && match.ProcessId > 0 && !IsMatchServerRunning(match.ProcessId, match.MatchId))
-                await matchService.TerminateMatchAsync(match, "server process is gone");
+                await matchService.TerminateMatchAsync(match, $"exceeded {MaxMatchAge.TotalMinutes} min limit");
             else
+            {
                 MarkPortInUse(match.ServerPort); // after a backend restart, live matches still own their ports
+                WarnIfSuspicious(match, age);
+            }
         }
+        _warnedMatches.IntersectWith(matches.Select(m => m.MatchId)); // forget ended matches
+
+        // A server can't outlive the limit either: its record is terminated above (which kills it),
+        // and once the record is gone the process is an orphan.
+        KillOrphanServers(matches.Select(m => m.MatchId).ToHashSet());
+    }
+
+    // Diagnostics only — never acts. One warning per match, so the log shows problems without spamming.
+    private readonly HashSet<string> _warnedMatches = new();
+    private static readonly TimeSpan SuspiciousAfter = TimeSpan.FromSeconds(60);
+
+    private void WarnIfSuspicious(MatchSession match, TimeSpan age)
+    {
+        if (age < SuspiciousAfter || _warnedMatches.Contains(match.MatchId)) return;
+
+        string? problem = null;
+        if (match.ProcessId <= 0)
+            problem = "has no server process (ProcessId<=0) — not spawned by this backend? " +
+                      "Possibly created by ANOTHER backend sharing the database";
+        else if (!IsMatchServerRunning(match.ProcessId, match.MatchId))
+            problem = $"server PID={match.ProcessId} is not running on this host — crashed, or the record belongs to " +
+                      "another backend. Record kept; it ends on report, admin end-all, or the age limit";
+
+        if (problem == null) return;
+        _warnedMatches.Add(match.MatchId);
+        Console.WriteLine($"[Reaper] WARNING match {match.MatchId} mode={match.Mode} status={match.Status} " +
+                          $"port={match.ServerPort} age={age.TotalSeconds:0}s {problem}.");
+    }
+
+    private void KillOrphanServers(HashSet<string> recordedMatchIds)
+    {
+        var suspectsNow = new HashSet<int>();
+        foreach (var (pid, matchId) in FindLocalMatchServers())
+        {
+            if (recordedMatchIds.Contains(matchId)) continue;
+
+            if (!_orphanSuspects.Contains(pid))
+            {
+                suspectsNow.Add(pid); // first sighting — confirm next sweep
+                continue;
+            }
+
+            Console.WriteLine($"[Matchmaking] Orphan server PID={pid} (match {matchId}) has no match record — killing.");
+            if (!StopMatchServer(pid, matchId))
+                suspectsNow.Add(pid); // kill failed — retry next sweep
+        }
+        _orphanSuspects.Clear();
+        _orphanSuspects.UnionWith(suspectsNow);
+    }
+
+    // Game servers running on THIS machine, from /proc: argv[0] is our server exe, followed by "-matchId <id>".
+    // Linux only — on Windows (local dev) there is no portable cmdline access, so no orphan sweep there.
+    private List<(int Pid, string MatchId)> FindLocalMatchServers()
+    {
+        var found = new List<(int, string)>();
+        var exeName = Path.GetFileName(_serverConfig.UnityServerExePath);
+        if (!OperatingSystem.IsLinux() || string.IsNullOrEmpty(exeName)) return found;
+
+        foreach (var dir in Directory.EnumerateDirectories("/proc"))
+        {
+            if (!int.TryParse(Path.GetFileName(dir), out int pid)) continue;
+
+            string[] args;
+            try { args = File.ReadAllText(Path.Combine(dir, "cmdline")).Split('\0'); }
+            catch { continue; } // exited meanwhile, or not readable
+
+            if (args.Length < 2 || Path.GetFileName(args[0]) != exeName) continue;
+
+            int i = Array.IndexOf(args, "-matchId");
+            if (i >= 0 && i + 1 < args.Length) found.Add((pid, args[i + 1]));
+        }
+        return found;
     }
 
     // Stops this match's server if it is still running (only that exact process — see IsMatchServerRunning).
@@ -142,7 +224,10 @@ public class MatchmakingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Console.WriteLine("[Matchmaking] Background service started.");
+        // Host + PID make it obvious in logs which backend instance did what (several may share one DB)
+        Console.WriteLine($"[Matchmaking] Background service started on host={Environment.MachineName} " +
+                          $"pid={Environment.ProcessId} exe='{_serverConfig.UnityServerExePath}' " +
+                          $"ports=[{string.Join(",", _serverConfig.GamePorts)}] matchLimit={MaxMatchAge.TotalMinutes}min");
         while (!stoppingToken.IsCancellationRequested)
         {
             // An exception escaping here would stop matchmaking for good
@@ -215,8 +300,17 @@ public class MatchmakingService : BackgroundService
             _serverConfig.ServerIp, port, "pvp", "MD_PVP_001");
 
         int processId = SpawnServer(match.MatchId, port, "pvp", chapterId: 0, sceneId: 0);
-        if (processId > 0)
-            await matchService.UpdateProcessIdAsync(match.MatchId, processId);
+        if (processId <= 0)
+        {
+            // No server = nothing can ever report or end this match — drop it now instead of leaving a ghost.
+            // Players stay "waiting" in the queue, so the next loop retries the pairing.
+            await matchService.DeleteAsync(match.MatchId);
+            ReleasePort(port);
+            Console.WriteLine($"[Matchmaking] ERROR PvP match {match.MatchId} dropped — server failed to spawn " +
+                              $"(exe='{_serverConfig.UnityServerExePath}'). Players left in queue.");
+            return;
+        }
+        await matchService.UpdateProcessIdAsync(match.MatchId, processId);
 
         await queueService.UpdateMatchedAsync(player1.PlayerId, match.MatchId, _serverConfig.ServerIp, port);
         await queueService.UpdateMatchedAsync(player2.PlayerId, match.MatchId, _serverConfig.ServerIp, port);
@@ -278,8 +372,15 @@ public class MatchmakingService : BackgroundService
                     _serverConfig.ServerIp, port, "ranked", "MD_PVP_001");
 
                 int processId = SpawnServer(match.MatchId, port, "ranked", chapterId: 0, sceneId: 0);
-                if (processId > 0)
-                    await matchService.UpdateProcessIdAsync(match.MatchId, processId);
+                if (processId <= 0)
+                {
+                    await matchService.DeleteAsync(match.MatchId);
+                    ReleasePort(port);
+                    Console.WriteLine($"[Matchmaking] ERROR Ranked match {match.MatchId} dropped — server failed to spawn " +
+                                      $"(exe='{_serverConfig.UnityServerExePath}'). Players left in queue.");
+                    return;
+                }
+                await matchService.UpdateProcessIdAsync(match.MatchId, processId);
 
                 await queueService.UpdateMatchedAsync(p1.PlayerId, match.MatchId, _serverConfig.ServerIp, port);
                 await queueService.UpdateMatchedAsync(bestOpponent.PlayerId, match.MatchId, _serverConfig.ServerIp, port);

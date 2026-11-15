@@ -77,7 +77,7 @@ public class MatchController : ControllerBase
     public async Task<ActionResult<MatchLoadoutDataDto>> GetMatchLoadouts(string matchId)
     {
         var match = await _matchService.GetByMatchIdAsync(matchId);
-        if (match == null) return NotFound();
+        if (match == null) return await MatchMissing("loadouts", matchId);
 
         var loadout1 = await _loadoutService.GetByPlayerIdAsync(match.Player1Id);
         var loadout2 = await _loadoutService.GetByPlayerIdAsync(match.Player2Id);
@@ -101,7 +101,7 @@ public class MatchController : ControllerBase
         [FromServices] IOptionsMonitor<JwtBearerOptions> jwtOptions)
     {
         var match = await _matchService.GetByMatchIdAsync(matchId);
-        if (match == null) return NotFound();
+        if (match == null) return await MatchMissing("verify-player", matchId);
 
         var parameters = jwtOptions.Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters;
         var result = await new JsonWebTokenHandler().ValidateTokenAsync(dto.Token, parameters);
@@ -118,7 +118,7 @@ public class MatchController : ControllerBase
     public async Task<ActionResult<MatchInfoDto>> GetMatchInfo(string matchId)
     {
         var match = await _matchService.GetByMatchIdAsync(matchId);
-        if (match == null) return NotFound();
+        if (match == null) return await MatchMissing("info", matchId);
 
         return Ok(new MatchInfoDto(match.MatchId, match.Mode, match.MapId));
     }
@@ -296,8 +296,11 @@ public class MatchController : ControllerBase
     [Authorize(Roles = "Server")]
     public async Task<ActionResult> UpdateMatchStatus(string matchId, [FromBody] MatchStatusUpdateDto dto)
     {
+        Console.WriteLine($"[Match] Report received: match={matchId} status={dto.Status} " +
+                          $"winner={dto.Result?.WinnerId ?? "-"} forfeit={dto.Result?.IsForfeit ?? false}");
+
         var match = await _matchService.GetByMatchIdAsync(matchId);
-        if (match == null) return NotFound();
+        if (match == null) return await MatchMissing($"report '{dto.Status}'", matchId);
 
         if (dto.Status != "cancelled" && dto.Status != "completed")
         {
@@ -308,8 +311,12 @@ public class MatchController : ControllerBase
         // The game server retries this report when the backend was slow/unreachable, so the same result can
         // arrive more than once — only the request that claims the match applies gems, rating and quests.
         if (await _matchService.TryClaimForFinishAsync(matchId) == null)
+        {
+            Console.WriteLine($"[Match] Report for {matchId} ignored — already being finished (status={match.Status}).");
             return Ok(new { message = "already_reported" });
+        }
 
+        try
         {
             match.Status = dto.Status;
             match.Result = dto.Result;
@@ -395,9 +402,31 @@ public class MatchController : ControllerBase
                 await _actionService.LogActionAsync(player1Id, "MatchResult", history.Id, facts1);
                 await _actionService.LogActionAsync(player2Id!, "MatchResult", history.Id, facts2);
             }
+            Console.WriteLine($"[Match] Result recorded: match={matchId} mode={match.Mode} status={dto.Status} " +
+                              $"winner={dto.Result?.WinnerId ?? "-"} history={history.Id}");
             await _matchService.TerminateMatchAsync(match, $"server reported {dto.Status}");
+        }
+        catch (Exception ex)
+        {
+            // The claim is taken, so a retry from the server will get "already_reported" — log everything needed
+            // to recover this result by hand. Record stays "finishing" until the age limit ends it.
+            Console.WriteLine($"[Match] ERROR finishing match {matchId} (status={dto.Status}) — result may be " +
+                              $"partially applied. Payload: {System.Text.Json.JsonSerializer.Serialize(dto)}\n{ex}");
+            throw;
         }
 
         return Ok();
+    }
+
+    // Logs why a game server's request hit a missing record — that is how a lost result first shows up
+    private async Task<ActionResult> MatchMissing(string endpoint, string matchId)
+    {
+        var history = await _historyService.GetByMatchIdAsync(matchId);
+        Console.WriteLine($"[Match] WARNING {endpoint}: no live record for match {matchId} — " +
+                          (history != null
+                              ? $"already archived (status={history.Status})."
+                              : "not in history either: the record was deleted without archiving " +
+                                "(admin end-all, age limit, or ANOTHER backend sharing the database)."));
+        return NotFound();
     }
 }

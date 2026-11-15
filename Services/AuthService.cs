@@ -292,8 +292,10 @@ public class AuthService : IAuthService
         if (string.IsNullOrWhiteSpace(newUsername))
             return (false, "Username cannot be empty.");
 
-        var existing = await _userRepository.GetByFilterAsync(u => u.Username == newUsername);
-        if (existing != null && existing.Id != playerId)
+        newUsername = newUsername.Trim();
+
+        var existing = await _userRepository.GetByFilterAsync(u => u.Id != playerId && u.Username == newUsername);
+        if (existing != null)
             return (false, "Username is already taken.");
 
         var user = await _userRepository.GetByIdAsync(playerId);

@@ -1,4 +1,5 @@
 using GameInventoryApi.Models;
+using GameInventoryApi.Services;
 using MongoDB.Driver;
 
 namespace GameInventoryApi.Data;
@@ -8,6 +9,7 @@ public static class SeedData
     public static async Task InitializeAsync(IMongoDatabase database)
     {
         await SeedLibraryAsync(database);
+        await SeedAdminRolesAsync(database);
         await SeedUsersAsync(database);
         await SeedTopUpPacksAsync(database);
         await SeedGachaBannersAsync(database);
@@ -207,6 +209,22 @@ public static class SeedData
         await SeedTrinketsAsync(database);
 
         Console.WriteLine("[Seed] Library seeded.");
+    }
+
+    private static async Task SeedAdminRolesAsync(IMongoDatabase database)
+    {
+        var col = database.GetCollection<AdminRoleDefinition>("AdminRoles");
+        var existing = await col.Find(_ => true).ToListAsync();
+        var existingNames = existing.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var def in AdminSecurityHelper.GetDefaultRoleDefinitions())
+        {
+            if (!existingNames.Contains(def.Name))
+            {
+                await col.InsertOneAsync(def);
+                Console.WriteLine($"[Seed] Ensured AdminRole '{def.Name}'.");
+            }
+        }
     }
 
     private static async Task SeedUsersAsync(IMongoDatabase database)

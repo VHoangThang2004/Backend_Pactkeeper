@@ -35,8 +35,71 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginDto dto)
     {
-        var response = await _authService.LoginAsync(dto);
-        return response != null ? Ok(response) : Unauthorized();
+        var ipAddress = GetClientIpAddress();
+        var userAgent = Request.Headers.UserAgent.ToString();
+        var (response, statusCode, errorMessage) = await _authService.LoginWithContextAsync(dto, ipAddress, userAgent);
+        if (response != null)
+        {
+            return Ok(response);
+        }
+
+        if (statusCode == 403)
+        {
+            return StatusCode(403, new { message = errorMessage ?? "Account access is restricted." });
+        }
+
+        return Unauthorized(new { message = errorMessage ?? "Invalid credentials." });
+    }
+
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+    {
+        var userId = GetAuthenticatedUserId();
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized(new { message = "Authenticated user claim was not found." });
+        }
+
+        var (success, statusCode, message) = await _authService.ChangePasswordAsync(
+            userId,
+            dto.CurrentPassword,
+            dto.NewPassword);
+
+        return success
+            ? Ok(new { message })
+            : StatusCode(statusCode, new { message });
+    }
+
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout()
+    {
+        var userId = GetAuthenticatedUserId() ?? string.Empty;
+        var username = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.UniqueName)?.Value
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+            ?? User.Identity?.Name;
+        var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        var ipAddress = GetClientIpAddress();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        var (_, message) = await _authService.LogoutAsync(userId, username, role, ipAddress, userAgent);
+        return Ok(new { message });
+    }
+
+    private string? GetAuthenticatedUserId() =>
+        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User.FindFirst("sub")?.Value
+        ?? User.FindFirst("PlayerId")?.Value;
+
+    private string? GetClientIpAddress()
+    {
+        var forwarded = Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(forwarded))
+        {
+            return forwarded.Split(',').FirstOrDefault()?.Trim();
+        }
+        return HttpContext.Connection.RemoteIpAddress?.ToString();
     }
 
     [HttpPost("steam")]

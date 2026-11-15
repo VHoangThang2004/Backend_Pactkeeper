@@ -20,6 +20,14 @@ public class User
     public string? BanReason { get; set; }
     public DateTime? BannedAt { get; set; }
     public string? BanDuration { get; set; }
+
+    public string? Email { get; set; }
+    public string AccountStatus { get; set; } = "ACTIVE";
+    public int TokenVersion { get; set; } = 0;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? LastLoginAt { get; set; }
+    public string? LastLoginIp { get; set; }
+    public List<string> CustomPermissions { get; set; } = new();
 }
 
 [BsonIgnoreExtraElements]

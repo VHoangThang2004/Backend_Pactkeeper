@@ -51,6 +51,12 @@ builder.Services.AddScoped<IMongoRepository<PlayerProfile>>(sp =>
 
 builder.Services.AddScoped<IMongoRepository<User>>(sp =>
     new MongoRepository<User>(sp.GetRequiredService<IMongoDatabase>(), "Users"));
+builder.Services.AddScoped<IMongoRepository<AdminRoleDefinition>>(sp =>
+    new MongoRepository<AdminRoleDefinition>(sp.GetRequiredService<IMongoDatabase>(), "AdminRoles"));
+builder.Services.AddScoped<IMongoRepository<AdminAuditLog>>(sp =>
+    new MongoRepository<AdminAuditLog>(sp.GetRequiredService<IMongoDatabase>(), "AdminAuditLogs"));
+builder.Services.AddScoped<IMongoRepository<AdminLoginHistory>>(sp =>
+    new MongoRepository<AdminLoginHistory>(sp.GetRequiredService<IMongoDatabase>(), "AdminLoginHistories"));
 
 builder.Services.AddScoped<IMongoRepository<TeamLoadoutDocument>>(sp =>
     new MongoRepository<TeamLoadoutDocument>(sp.GetRequiredService<IMongoDatabase>(), "TeamLoadouts"));
@@ -152,6 +158,7 @@ builder.Services.AddScoped<IRewardRuleService, RewardRuleService>();
 builder.Services.AddScoped<IRewardProgressService, RewardProgressService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAdminSecurityService, AdminSecurityService>();
 builder.Services.Configure<SteamSettings>(builder.Configuration.GetSection("SteamSettings"));
 builder.Services.AddHttpClient<ISteamAuthService, SteamAuthService>();
 builder.Services.Configure<GoogleSettings>(builder.Configuration.GetSection("GoogleSettings"));
@@ -188,6 +195,45 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     context.Token = accessToken;
                 }
                 return Task.CompletedTask;
+            },
+            OnTokenValidated = async context =>
+            {
+                var userId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                    ?? context.Principal?.FindFirst("PlayerId")?.Value;
+
+                if (string.IsNullOrEmpty(userId) || !ObjectId.TryParse(userId, out _))
+                {
+                    return;
+                }
+
+                var userRepo = context.HttpContext.RequestServices.GetRequiredService<IMongoRepository<User>>();
+                var user = await userRepo.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    context.Fail("Account no longer exists.");
+                    return;
+                }
+
+                if (user.IsBanned)
+                {
+                    context.Fail("Account is banned.");
+                    return;
+                }
+
+                var status = AdminSecurityHelper.NormalizeAccountStatus(user.AccountStatus);
+                if (status != "ACTIVE")
+                {
+                    context.Fail($"Account is {status}.");
+                    return;
+                }
+
+                var tvClaim = context.Principal?.FindFirst("tv")?.Value;
+                var tokenVersion = int.TryParse(tvClaim, out var parsedTv) ? parsedTv : 0;
+                if (tokenVersion != user.TokenVersion)
+                {
+                    context.Fail("Session has been revoked.");
+                }
             }
         };
     });

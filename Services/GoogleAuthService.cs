@@ -95,6 +95,7 @@ public class GoogleAuthService(
             new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
             new Claim(ClaimTypes.Role, user.Role),
             new Claim("PlayerId", user.Id),
+            new Claim("tv", user.TokenVersion.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

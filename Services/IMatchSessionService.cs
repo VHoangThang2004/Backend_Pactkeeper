@@ -7,7 +7,7 @@ public interface IMatchSessionService
 {
     Task<MatchSession?> GetByMatchIdAsync(string matchId);
     Task<MatchSession?> GetActiveMatchByPlayerIdAsync(string playerId);
-    Task<MatchSession> CreateMatchAsync(string player1Id, string player2Id, string serverIp, int port, string mode = "pvp", string mapId = "MD_PVP_001");
+    Task<MatchSession> CreateMatchAsync(string player1Id, string player2Id, string serverIp, int port, string mode = "pvp", string mapId = "MD_PVP_001", int? chapterId = null, int? sceneId = null);
     Task<List<MatchSession>> GetAllByPlayerIdAsync(string playerId);
     Task<List<MatchSession>> GetAllAsync();
 

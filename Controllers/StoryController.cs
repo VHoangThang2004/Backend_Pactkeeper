@@ -59,33 +59,63 @@ public class StoryController : ControllerBase
 
     // -------------------------------------------------------
     // POST /api/story/progress/complete
-    // No body. Client says "I finished this scene."
+    // Body (optional): { "chapterId": 2, "sceneId": 1 }. Client says "I finished this scene."
+    // Only advances Current Progress if the completed (chapterId, sceneId) matches current!
     // -------------------------------------------------------
     [HttpPost("progress/complete")]
     [Authorize(Roles = "Player")]
-    public async Task<ActionResult<CurrentProgressDto>> CompleteScene()
+    public async Task<ActionResult<CurrentProgressDto>> CompleteScene(
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] CompleteSceneRequestDto? dto = null)
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
         if (playerId == null) return Unauthorized();
 
         var current = await _storyService.GetCurrentAsync(playerId);
-
-        if (current.IsCompleted)
-            return BadRequest("Scene already completed. Call /next to continue.");
-
-        var scene = await _chapterConfigService.GetSceneAsync(
+        var currentScene = await _chapterConfigService.GetSceneAsync(
             current.ChapterId, current.SceneId);
 
-        if (scene == null)
+        int? targetChapterId = dto?.ChapterId;
+        int? targetSceneId = dto?.SceneId;
+
+        if (!targetChapterId.HasValue || !targetSceneId.HasValue)
+        {
+            var (matchChapterId, matchSceneId) = await TryResolveActiveStoryMatchSceneAsync(playerId);
+            targetChapterId ??= matchChapterId;
+            targetSceneId ??= matchSceneId;
+        }
+
+        // Guard: Never advance Current Progress if the scene that just finished is NOT the player's Current Progress
+        // (e.g. replaying C2_S1 while Current Progress is C2_S2, or idempotent call after battle-complete already advanced C2_S1 -> C2_S2).
+        if (targetChapterId.HasValue && targetSceneId.HasValue &&
+            (targetChapterId.Value != current.ChapterId || targetSceneId.Value != current.SceneId))
+        {
+            Console.WriteLine($"[Story] Ignored progress/complete for C{targetChapterId}_S{targetSceneId} " +
+                              $"because current progress is C{current.ChapterId}_S{current.SceneId} (completed={current.IsCompleted}).");
+            await TerminateStoryMatchesAsync(playerId, $"finished non-current/already-advanced scene C{targetChapterId}_S{targetSceneId}");
+            return Ok(ToDto(new AdvanceResult(current, currentScene, false)));
+        }
+
+        if (current.IsCompleted || current.IsChapterCompleted)
+        {
+            if (targetChapterId.HasValue && targetSceneId.HasValue &&
+                targetChapterId.Value == current.ChapterId && targetSceneId.Value == current.SceneId)
+            {
+                await TerminateStoryMatchesAsync(playerId, $"idempotent complete C{current.ChapterId}_S{current.SceneId}");
+                return Ok(ToDto(new AdvanceResult(current, currentScene, false)));
+            }
+            return BadRequest("Scene already completed. Call /next to continue.");
+        }
+
+        if (currentScene == null)
             return NotFound("Scene config not found.");
 
         // Tutorial battles (Ch0..Ch3) are completed by the client (BattleTutorialStarter).
-        if (scene.Type == SceneType.Battle && current.ChapterId > 3)
+        if (currentScene.Type == SceneType.Battle && current.ChapterId > 3)
             return BadRequest("Battle scenes are completed by the server, not the client.");
 
-        var advanceResult = await _storyService.CompleteAndAdvanceAsync(playerId, scene);
+        var advanceResult = await _storyService.CompleteAndAdvanceAsync(playerId, currentScene);
 
-        if (scene.Type == SceneType.Battle)
+        if (currentScene.Type == SceneType.Battle)
         {
             await TerminateStoryMatchesAsync(playerId, $"completed tutorial battle C{current.ChapterId}_S{current.SceneId}");
         }
@@ -141,7 +171,7 @@ public class StoryController : ControllerBase
     // -------------------------------------------------------
     // POST /api/story/progress/battle-complete
     // Called by headless server after player wins a battle.
-    // Body: { "playerId": "..." }
+    // Body: { "playerId": "...", "chapterId": 2, "sceneId": 1 }
     // -------------------------------------------------------
     [HttpPost("progress/battle-complete")]
     [Authorize(Roles = "Server")]
@@ -149,21 +179,49 @@ public class StoryController : ControllerBase
         [FromBody] BattleCompleteDto dto)
     {
         var current = await _storyService.GetCurrentAsync(dto.PlayerId);
-
-        var scene = await _chapterConfigService.GetSceneAsync(
+        var currentScene = await _chapterConfigService.GetSceneAsync(
             current.ChapterId, current.SceneId);
 
-        if (scene == null)
+        int? battleChapterId = dto.ChapterId;
+        int? battleSceneId = dto.SceneId;
+
+        // Fallback for older server binaries that only send { "playerId" }:
+        // inspect the active/latest story MatchSession for this player.
+        if (!battleChapterId.HasValue || !battleSceneId.HasValue ||
+            (battleChapterId.Value == 0 && battleSceneId.Value == 0))
+        {
+            var (matchChapterId, matchSceneId) = await TryResolveActiveStoryMatchSceneAsync(dto.PlayerId);
+            if (matchChapterId.HasValue && matchSceneId.HasValue)
+            {
+                battleChapterId = matchChapterId;
+                battleSceneId = matchSceneId;
+            }
+        }
+
+        // Guard: If the battle server that just finished was running a Replay scene (e.g. C2_S1)
+        // while Current Progress is at a later scene (e.g. C2_S2), NEVER advance Current Progress!
+        if (battleChapterId.HasValue && battleSceneId.HasValue &&
+            (battleChapterId.Value != current.ChapterId || battleSceneId.Value != current.SceneId))
+        {
+            Console.WriteLine($"[Story] Ignored battle-complete for replay/non-current scene C{battleChapterId}_S{battleSceneId} " +
+                              $"(player={dto.PlayerId}, current progress is C{current.ChapterId}_S{current.SceneId}).");
+            return Ok(ToDto(new AdvanceResult(current, currentScene, false)));
+        }
+
+        if (current.IsCompleted || current.IsChapterCompleted)
+        {
+            Console.WriteLine($"[Story] Ignored battle-complete for C{current.ChapterId}_S{current.SceneId} — already marked complete.");
+            return Ok(ToDto(new AdvanceResult(current, currentScene, false)));
+        }
+
+        if (currentScene == null)
             return NotFound("Scene config not found.");
 
-        if (scene.Type != SceneType.Battle)
+        if (currentScene.Type != SceneType.Battle)
             return BadRequest("Current scene is not a battle.");
 
-        if (current.IsCompleted)
-            return BadRequest("Battle already marked complete.");
-
         // Complete the battle scene (auto-advances server-side if scene.AutoAdvance)
-        return Ok(ToDto(await _storyService.CompleteAndAdvanceAsync(dto.PlayerId, scene)));
+        return Ok(ToDto(await _storyService.CompleteAndAdvanceAsync(dto.PlayerId, currentScene)));
     }
 
     // Pure mapping: AdvanceResult -> DTO. No business logic here.
@@ -334,6 +392,39 @@ public class StoryController : ControllerBase
         return Ok(new { terminated = killed });
     }
 
+    private async Task<(int? ChapterId, int? SceneId)> TryResolveActiveStoryMatchSceneAsync(string playerId)
+    {
+        var all = await _matchService.GetAllByPlayerIdAsync(playerId);
+        var storyMatch = all
+            .Where(m => m.Mode == "story" && (m.Status == "pending" || m.Status == "active" || m.Status == "finishing"))
+            .OrderByDescending(m => m.CreatedAt)
+            .FirstOrDefault()
+            ?? all.Where(m => m.Mode == "story")
+                  .OrderByDescending(m => m.CreatedAt)
+                  .FirstOrDefault();
+
+        if (storyMatch == null)
+            return (null, null);
+
+        if (storyMatch.ChapterId.HasValue && storyMatch.SceneId.HasValue)
+            return (storyMatch.ChapterId.Value, storyMatch.SceneId.Value);
+
+        if (!string.IsNullOrEmpty(storyMatch.MapId))
+        {
+            // Parse MapId format like "MD_PVE_C2S1" or "C2_S1"
+            var match = System.Text.RegularExpressions.Regex.Match(
+                storyMatch.MapId, @"C(\d+)_?S(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success &&
+                int.TryParse(match.Groups[1].Value, out int parsedCh) &&
+                int.TryParse(match.Groups[2].Value, out int parsedSc))
+            {
+                return (parsedCh, parsedSc);
+            }
+        }
+
+        return (null, null);
+    }
+
     private async Task<int> TerminateStoryMatchesAsync(string playerId, string reason)
     {
         var all = await _matchService.GetAllByPlayerIdAsync(playerId);
@@ -374,7 +465,8 @@ public record CurrentProgressDto(
     bool AdvancedFromPrev // (optional) true if this response is the result of an auto-advance
 );
 public record StoryProgressDto(int ChapterId, int SceneId, bool IsCompleted, bool IsChapterCompleted);
-public record BattleCompleteDto(string PlayerId);
+public record CompleteSceneRequestDto(int? ChapterId = null, int? SceneId = null);
+public record BattleCompleteDto(string PlayerId, int? ChapterId = null, int? SceneId = null);
 public record StoryMatchResponseDto(string MatchId, string ServerIp, int ServerPort);
 public record SelectStoryMatchRequestDto(int ChapterId, int SceneId, bool AutoResume = false);
 public record StoryMatchSelectResponseDto(

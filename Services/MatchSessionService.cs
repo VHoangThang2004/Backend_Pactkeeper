@@ -27,7 +27,7 @@ public class MatchSessionService : IMatchSessionService
             (m.Player1Id == playerId || m.Player2Id == playerId) &&
             (m.Status == "pending" || m.Status == "active"));
 
-    public async Task<MatchSession> CreateMatchAsync(string player1Id, string player2Id, string serverIp, int port, string mode = "pvp", string mapId = "MD_PVP_001")
+    public async Task<MatchSession> CreateMatchAsync(string player1Id, string player2Id, string serverIp, int port, string mode = "pvp", string mapId = "MD_PVP_001", int? chapterId = null, int? sceneId = null)
     {
         var match = new MatchSession
         {
@@ -37,7 +37,9 @@ public class MatchSessionService : IMatchSessionService
             ServerPort = port,
             Status = "pending",
             Mode = mode,
-            MapId = mapId
+            MapId = mapId,
+            ChapterId = chapterId,
+            SceneId = sceneId
         };
         await _repository.CreateAsync(match);
         return match;

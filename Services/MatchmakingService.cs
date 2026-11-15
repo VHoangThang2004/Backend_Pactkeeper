@@ -318,7 +318,9 @@ public class MatchmakingService : BackgroundService
             serverIp: _serverConfig.ServerIp,
             port: port,
             mode: "story",
-            mapId: mapId
+            mapId: mapId,
+            chapterId: chapterId,
+            sceneId: sceneId
         );
 
         int processId = SpawnServer(match.MatchId, port, "story", chapterId, sceneId);

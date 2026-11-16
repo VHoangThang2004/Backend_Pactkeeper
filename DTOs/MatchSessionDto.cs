@@ -11,6 +11,7 @@ public record MatchSessionDto(
 );
 
 public record VerifyPlayerRequestDto(string Token);
+public record HeartbeatDto(string? Phase);
 public record VerifyPlayerResponseDto(string PlayerId);
 
 public record MatchSessionJoinInfoDto(

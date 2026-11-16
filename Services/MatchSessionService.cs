@@ -53,6 +53,16 @@ public class MatchSessionService : IMatchSessionService
         await _repository.UpdateAsync(match.Id, match);
     }
 
+    public async Task<bool> RecordHeartbeatAsync(string matchId, string phase)
+        => await _repository.FindOneAndUpdateAsync(m => m.MatchId == matchId,
+            Builders<MatchSession>.Update.Set(m => m.LastHeartbeatAt, DateTime.UtcNow).Set(m => m.Phase, phase)) != null;
+
+    public Task<MatchSession?> TryClaimAbandonedAsync(MatchSession match)
+        => _repository.FindOneAndUpdateAsync(
+            m => m.MatchId == match.MatchId && (m.Status == "pending" || m.Status == "active") &&
+                 m.LastHeartbeatAt == match.LastHeartbeatAt,
+            Builders<MatchSession>.Update.Set(m => m.Status, "abandoned"));
+
     public Task<MatchSession?> TryClaimForFinishAsync(string matchId)
         => _repository.FindOneAndUpdateAsync(
             m => m.MatchId == matchId && (m.Status == "pending" || m.Status == "active"),

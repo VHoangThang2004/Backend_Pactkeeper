@@ -119,6 +119,8 @@ public class MatchmakingService : BackgroundService
                 await matchService.TerminateMatchAsync(match, "retrying server stop");
             else if (age > MaxMatchAge)
                 await matchService.TerminateMatchAsync(match, $"exceeded {MaxMatchAge.TotalMinutes} min limit");
+            else if (HeartbeatStale(match, out var silentFor))
+                await EndAbandonedMatch(scope, matchService, match, silentFor);
             else
             {
                 MarkPortInUse(match.ServerPort); // after a backend restart, live matches still own their ports
@@ -130,6 +132,38 @@ public class MatchmakingService : BackgroundService
         // A server can't outlive the limit either: its record is terminated above (which kills it),
         // and once the record is gone the process is an orphan.
         KillOrphanServers(matches.Select(m => m.MatchId).ToHashSet());
+    }
+
+    // -------------------------------------------------------
+    // Heartbeat — game servers ping once a minute. No ping for HeartbeatTimeout = the server crashed or hung.
+    // Only live (pending/active) matches are judged: "finishing" has its result being applied, "stopping" is
+    // already being torn down.
+    // -------------------------------------------------------
+
+    private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(2.5);   // tolerates 1 lost beat
+    private static readonly TimeSpan FirstHeartbeatTimeout = TimeSpan.FromMinutes(3); // spawn + login retries
+    private readonly DateTime _startedAt = DateTime.UtcNow;
+
+    private bool HeartbeatStale(MatchSession match, out TimeSpan silentFor)
+    {
+        silentFor = DateTime.UtcNow - (match.LastHeartbeatAt ?? match.CreatedAt);
+        if (match.Status != "pending" && match.Status != "active") return false;
+        // Right after this backend (re)starts, servers haven't had a full window to reach it — judge nobody yet
+        if (DateTime.UtcNow - _startedAt < HeartbeatTimeout) return false;
+        return silentFor > (match.LastHeartbeatAt == null ? FirstHeartbeatTimeout : HeartbeatTimeout);
+    }
+
+    private static async Task EndAbandonedMatch(IServiceScope scope, IMatchSessionService matchService,
+        MatchSession match, TimeSpan silentFor)
+    {
+        // Atomic: loses to a heartbeat or a result report that lands at the same moment
+        var claimed = await matchService.TryClaimAbandonedAsync(match);
+        if (claimed == null) return;
+
+        match.Status = "abandoned"; // archived with no result → no rewards / rating
+        await scope.ServiceProvider.GetRequiredService<IMatchHistoryService>().ArchiveAsync(match);
+        string heard = match.LastHeartbeatAt == null ? "never sent a heartbeat" : $"no heartbeat for {silentFor.TotalSeconds:0}s";
+        await matchService.TerminateMatchAsync(match, $"{heard} (last phase='{match.Phase}')");
     }
 
     // Diagnostics only — never acts. One warning per match, so the log shows problems without spamming.
@@ -224,6 +258,12 @@ public class MatchmakingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_serverConfig.RunMatchmaking)
+        {
+            Console.WriteLine($"[Matchmaking] DISABLED on host={Environment.MachineName} (ServerConfig:RunMatchmaking=false) — " +
+                              "this backend never pairs players, spawns servers or cleans up matches.");
+            return;
+        }
         // Host + PID make it obvious in logs which backend instance did what (several may share one DB)
         Console.WriteLine($"[Matchmaking] Background service started on host={Environment.MachineName} " +
                           $"pid={Environment.ProcessId} exe='{_serverConfig.UnityServerExePath}' " +

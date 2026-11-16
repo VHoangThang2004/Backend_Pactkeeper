@@ -15,6 +15,10 @@ public interface IMatchSessionService
     Task UpdateProcessIdAsync(string matchId, int processId);
     // Atomically moves a live (pending/active) match to "finishing"; null if it was already claimed or ended
     Task<MatchSession?> TryClaimForFinishAsync(string matchId);
+    // $set of the heartbeat fields only (never a full replace — that could undo a concurrent status change); false if no record
+    Task<bool> RecordHeartbeatAsync(string matchId, string phase);
+    // Atomically marks a live match "abandoned" — only if no heartbeat arrived since the reaper read it; null if one did
+    Task<MatchSession?> TryClaimAbandonedAsync(MatchSession match);
     Task DeleteAsync(string matchId);
     Task EndAllMatchesAsync();
 

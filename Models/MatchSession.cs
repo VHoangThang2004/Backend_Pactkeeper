@@ -18,7 +18,10 @@ public class MatchSession
     public string MapId { get; set; } = "defaultPvpMap";
     public int? ChapterId { get; set; } = null;
     public int? SceneId { get; set; } = null;
-    public string Status { get; set; } = "pending"; // pending, active, finishing (result being applied), stopping (ended, server still being killed)
+    public string Status { get; set; } = "pending"; // pending, active, finishing (result being applied), stopping (ended, server still being killed), abandoned (no heartbeat)
     public MatchResultData? Result { get; set; } = null;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    // Set by the backend's clock on every game-server heartbeat (POST /api/match/{id}/heartbeat); null until the first one
+    public DateTime? LastHeartbeatAt { get; set; } = null;
+    public string Phase { get; set; } = string.Empty; // what the server last said it was doing (scene name / "ending")
 }

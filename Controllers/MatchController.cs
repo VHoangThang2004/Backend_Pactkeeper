@@ -93,6 +93,13 @@ public class MatchController : ControllerBase
 
     // Game server asks: is this connection token a real, unexpired login of a player in this match?
     // Validated with the exact parameters the API's own JWT auth uses.
+    // Game server says "alive" about once a minute; the reaper ends matches whose heartbeat stopped.
+    // 404 = no record (already ended) — the server just keeps waiting for the backend to stop it.
+    [HttpPost("{matchId}/heartbeat")]
+    [Authorize(Roles = "Server")]
+    public async Task<ActionResult> Heartbeat(string matchId, [FromBody] HeartbeatDto dto)
+        => await _matchService.RecordHeartbeatAsync(matchId, dto.Phase ?? string.Empty) ? Ok() : NotFound();
+
     [HttpPost("{matchId}/verify-player")]
     [Authorize(Roles = "Server")]
     public async Task<ActionResult<VerifyPlayerResponseDto>> VerifyPlayer(

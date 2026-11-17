@@ -37,3 +37,12 @@ public record FriendPresenceUpdateDto(
     bool IsOnline,
     string Status = "idle"
 );
+
+public record SearchPlayerResultDto(
+    string PlayerId,
+    string Username,
+    int Level,
+    string Relationship, // "none", "friend", "pending_sent", "pending_received"
+    bool IsOnline = false,
+    string Status = "offline"
+);

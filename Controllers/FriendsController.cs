@@ -64,6 +64,19 @@ public class FriendsController : ControllerBase
         return Ok(requests);
     }
 
+    [HttpGet("search")]
+    public async Task<ActionResult<List<SearchPlayerResultDto>>> Search([FromQuery] string q, [FromQuery] int limit = 10)
+    {
+        var playerId = GetPlayerId();
+        if (playerId == null) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
+            return Ok(new List<SearchPlayerResultDto>());
+
+        var results = await _friendshipService.SearchPlayersAsync(playerId, q, limit);
+        return Ok(results);
+    }
+
     [HttpPost("request")]
     public async Task<ActionResult> SendRequest([FromBody] SendFriendRequestDto dto)
     {
@@ -254,17 +267,6 @@ public class FriendsController : ControllerBase
 
         _presenceTracker.SetInMatch(invite.SenderPlayerId, true);
         _presenceTracker.SetInMatch(receiverId, true);
-
-        await _lobbyHub.Clients.Group(LobbyHub.AdminsGroup).SendAsync("OnPlayerPresenceChanged", new FriendPresenceUpdateDto(
-            invite.SenderPlayerId,
-            IsOnline: true,
-            Status: "in_match"
-        ));
-        await _lobbyHub.Clients.Group(LobbyHub.AdminsGroup).SendAsync("OnPlayerPresenceChanged", new FriendPresenceUpdateDto(
-            receiverId,
-            IsOnline: true,
-            Status: "in_match"
-        ));
 
         var p1 = await _profileService.GetByFilterAsync(p => p.PlayerId == match.Player1Id);
         var p2 = await _profileService.GetByFilterAsync(p => p.PlayerId == match.Player2Id);

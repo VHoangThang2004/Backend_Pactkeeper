@@ -12,4 +12,5 @@ public interface IFriendshipService
     Task<(bool Success, Friendship? Friendship)> AcceptFriendRequestAsync(string playerId, string requestId);
     Task<bool> DeclineFriendRequestAsync(string playerId, string requestId);
     Task<bool> RemoveFriendAsync(string playerId, string friendPlayerId);
+    Task<List<SearchPlayerResultDto>> SearchPlayersAsync(string callerPlayerId, string query, int limit = 10);
 }

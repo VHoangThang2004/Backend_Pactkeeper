@@ -1,6 +1,7 @@
 using GameInventoryApi.DTOs;
 using GameInventoryApi.Models;
 using GameInventoryApi.Repositories;
+using GameInventoryApi.Utils;
 
 namespace GameInventoryApi.Services;
 
@@ -251,5 +252,83 @@ public class FriendshipService : IFriendshipService
         await _friendshipRepo.DeleteAsync(existing.Id);
         Console.WriteLine($"[Friendship] Friendship removed between {playerId} and {friendPlayerId}");
         return true;
+    }
+
+    public async Task<List<SearchPlayerResultDto>> SearchPlayersAsync(string callerPlayerId, string query, int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
+            return new List<SearchPlayerResultDto>();
+
+        var trimmedQuery = query.Trim();
+        var normalizedQuery = StringUtils.RemoveDiacritics(trimmedQuery);
+
+        // 1. Fetch potential player profiles (excluding the caller)
+        var allProfiles = await _profileRepo.GetAllByFilterAsync(p => p.PlayerId != callerPlayerId);
+
+        // 2. Filter candidates where normalized username contains the normalized query, or exact PlayerId
+        var matchedProfiles = allProfiles
+            .Where(p =>
+            {
+                if (string.Equals(p.PlayerId, trimmedQuery, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                if (string.IsNullOrWhiteSpace(p.Username))
+                    return false;
+
+                var normUsername = StringUtils.RemoveDiacritics(p.Username);
+                return normUsername.Contains(normalizedQuery);
+            })
+            .Take(Math.Clamp(limit, 1, 50))
+            .ToList();
+
+        if (matchedProfiles.Count == 0)
+            return new List<SearchPlayerResultDto>();
+
+        var matchedPlayerIds = matchedProfiles.Select(p => p.PlayerId).ToList();
+
+        // 3. Fetch any existing relationships with the caller
+        var relationships = await _friendshipRepo.GetAllByFilterAsync(f =>
+            (f.PlayerId == callerPlayerId && matchedPlayerIds.Contains(f.FriendId)) ||
+            (f.FriendId == callerPlayerId && matchedPlayerIds.Contains(f.PlayerId)));
+
+        var results = new List<SearchPlayerResultDto>();
+        foreach (var profile in matchedProfiles)
+        {
+            var rel = relationships.FirstOrDefault(f =>
+                (f.PlayerId == callerPlayerId && f.FriendId == profile.PlayerId) ||
+                (f.FriendId == callerPlayerId && f.PlayerId == profile.PlayerId));
+
+            string relationshipStatus = "none";
+            if (rel != null)
+            {
+                if (rel.Status == "accepted")
+                {
+                    relationshipStatus = "friend";
+                }
+                else if (rel.Status == "pending")
+                {
+                    relationshipStatus = rel.PlayerId == callerPlayerId ? "pending_sent" : "pending_received";
+                }
+            }
+
+            bool isOnline = _presenceTracker.IsOnline(profile.PlayerId);
+            string status = isOnline ? _presenceTracker.GetStatus(profile.PlayerId) : "offline";
+
+            results.Add(new SearchPlayerResultDto(
+                profile.PlayerId,
+                profile.Username,
+                profile.Level,
+                relationshipStatus,
+                isOnline,
+                status
+            ));
+        }
+
+        // Return exact matches first, then prefix matches, then remaining
+        return results
+            .OrderByDescending(r => string.Equals(StringUtils.RemoveDiacritics(r.Username), normalizedQuery, StringComparison.Ordinal))
+            .ThenByDescending(r => StringUtils.RemoveDiacritics(r.Username).StartsWith(normalizedQuery, StringComparison.Ordinal))
+            .ThenBy(r => r.Username)
+            .ToList();
     }
 }

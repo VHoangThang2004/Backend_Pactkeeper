@@ -15,15 +15,18 @@ public class PlayerController : ControllerBase
     private readonly IMongoRepository<User> _userRepository;
     private readonly IMongoRepository<PlayerProfile> _profileRepository;
     private readonly INotificationService _notificationService;
+    private readonly IUserPresenceTracker _presenceTracker;
 
     public PlayerController(
         IMongoRepository<User> userRepository,
         IMongoRepository<PlayerProfile> profileRepository,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IUserPresenceTracker presenceTracker)
     {
         _userRepository = userRepository;
         _profileRepository = profileRepository;
         _notificationService = notificationService;
+        _presenceTracker = presenceTracker;
     }
 
     // GET /api/player/profile/{playerId}
@@ -54,11 +57,17 @@ public class PlayerController : ControllerBase
 
         var isBanned = user?.IsBanned ?? profile?.IsBanned ?? false;
         var banReason = user?.BanReason ?? profile?.BanReason;
+        var resolvedPlayerId = profile?.PlayerId ?? user?.Id ?? playerId;
+        var resolvedLastLogin = profile?.LastLogin ?? user?.LastLoginAt ?? user?.CreatedAt ?? DateTime.UtcNow;
+        if (user?.LastLoginAt is DateTime userLastLogin && userLastLogin > resolvedLastLogin)
+        {
+            resolvedLastLogin = userLastLogin;
+        }
 
         return Ok(new AdminPlayerProfileDto
         {
             Id = profile?.Id ?? user?.Id ?? playerId,
-            PlayerId = profile?.PlayerId ?? user?.Id ?? playerId,
+            PlayerId = resolvedPlayerId,
             Username = profile?.Username ?? user?.Username ?? "Unknown Traveler",
             Level = profile?.Level ?? 1,
             Experience = profile?.Experience ?? 0,
@@ -66,7 +75,9 @@ public class PlayerController : ControllerBase
             Gems = profile?.Gems ?? 0,
             IsBanned = isBanned,
             BanReason = banReason,
-            LastLogin = profile?.LastLogin ?? DateTime.UtcNow,
+            LastLogin = resolvedLastLogin,
+            IsOnline = _presenceTracker.IsOnline(resolvedPlayerId),
+            PresenceStatus = _presenceTracker.GetStatus(resolvedPlayerId),
             OwnedUnitsCount = profile?.OwnedUnits.Count ?? 0,
             OwnedWeaponsCount = profile?.OwnedWeapons.Count ?? 0,
             OwnedTrinketsCount = profile?.OwnedTrinkets.Count ?? 0
@@ -89,6 +100,12 @@ public class PlayerController : ControllerBase
         {
             seenIds.Add(p.PlayerId);
             userMap.TryGetValue(p.PlayerId, out var u);
+            var lastLogin = p.LastLogin;
+            if (u?.LastLoginAt is DateTime userLastLogin && userLastLogin > lastLogin)
+            {
+                lastLogin = userLastLogin;
+            }
+
             list.Add(new AdminPlayerProfileDto
             {
                 Id = p.Id,
@@ -100,7 +117,9 @@ public class PlayerController : ControllerBase
                 Gems = p.Gems,
                 IsBanned = p.IsBanned || (u?.IsBanned ?? false),
                 BanReason = p.BanReason ?? u?.BanReason,
-                LastLogin = p.LastLogin,
+                LastLogin = lastLogin,
+                IsOnline = _presenceTracker.IsOnline(p.PlayerId),
+                PresenceStatus = _presenceTracker.GetStatus(p.PlayerId),
                 OwnedUnitsCount = p.OwnedUnits.Count,
                 OwnedWeaponsCount = p.OwnedWeapons.Count,
                 OwnedTrinketsCount = p.OwnedTrinkets.Count
@@ -108,7 +127,7 @@ public class PlayerController : ControllerBase
         }
 
         // Include any user accounts that do not yet have a profile
-        foreach (var u in users.Where(u => u.Role == "Player" && !seenIds.Contains(u.Id)))
+        foreach (var u in users.Where(u => string.Equals(u.Role, "Player", StringComparison.OrdinalIgnoreCase) && !seenIds.Contains(u.Id)))
         {
             list.Add(new AdminPlayerProfileDto
             {
@@ -121,7 +140,9 @@ public class PlayerController : ControllerBase
                 Gems = 0,
                 IsBanned = u.IsBanned,
                 BanReason = u.BanReason,
-                LastLogin = DateTime.UtcNow,
+                LastLogin = u.LastLoginAt ?? u.CreatedAt,
+                IsOnline = _presenceTracker.IsOnline(u.Id),
+                PresenceStatus = _presenceTracker.GetStatus(u.Id),
                 OwnedUnitsCount = 0,
                 OwnedWeaponsCount = 0,
                 OwnedTrinketsCount = 0

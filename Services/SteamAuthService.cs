@@ -38,6 +38,7 @@ public class SteamAuthService(
 
         var user = await _userRepository.GetByFilterAsync(u => u.LoginProviders.SteamId == steamId);
 
+        var now = DateTime.UtcNow;
         if (user == null)
         {
             string personaName = await GetSteamPersonaNameAsync(steamId);
@@ -47,11 +48,23 @@ public class SteamAuthService(
             {
                 Username = username,
                 Role = "Player",
-                LoginProviders = new LoginProviders { SteamId = steamId }
+                LoginProviders = new LoginProviders { SteamId = steamId },
+                LastLoginAt = now
             };
             await _userRepository.CreateAsync(user);
             await _profileService.CreateInitialProfileAsync(user.Id, user.Username);
             Console.WriteLine($"[SteamAuth] Created new user for SteamId {steamId} with name '{username}'");
+        }
+        else
+        {
+            user.LastLoginAt = now;
+            await _userRepository.UpdateAsync(user.Id, user);
+            var profile = await _profileService.GetByFilterAsync(p => p.PlayerId == user.Id);
+            if (profile != null)
+            {
+                profile.LastLogin = now;
+                await _profileService.UpdateAsync(profile.Id, profile);
+            }
         }
 
         return new AuthResponseDto(GenerateJwtToken(user), user.Role, user.Username, user.Id);

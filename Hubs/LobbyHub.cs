@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using GameInventoryApi.DTOs;
 using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -8,6 +9,8 @@ namespace GameInventoryApi.Hubs;
 [Authorize]
 public class LobbyHub : Hub
 {
+    public const string AdminsGroup = "Admins";
+
     private readonly IUserPresenceTracker _presenceTracker;
     private readonly IFriendshipService _friendshipService;
     private readonly IFriendlyInviteService _inviteService;
@@ -31,10 +34,28 @@ public class LobbyHub : Hub
         _profileService = profileService;
     }
 
+    private static bool IsStaff(ClaimsPrincipal? user)
+    {
+        if (user?.Identity?.IsAuthenticated != true) return false;
+        var role = user.FindFirst(ClaimTypes.Role)?.Value;
+        if (string.IsNullOrWhiteSpace(role)) return false;
+        return !string.Equals(AdminSecurityHelper.NormalizeRoleName(role), "Player", StringComparison.OrdinalIgnoreCase);
+    }
+
     public override async Task OnConnectedAsync()
     {
+        if (IsStaff(Context.User))
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, AdminsGroup);
+            var snapshot = _presenceTracker.GetAllOnlineStatuses();
+            Console.WriteLine($"[LobbyHub] Staff connected: ConnectionId={Context.ConnectionId}, Role={Context.User?.FindFirst(ClaimTypes.Role)?.Value}. Sending {snapshot.Count} online players snapshot.");
+            await Clients.Caller.SendAsync("OnOnlinePlayersSnapshot", snapshot);
+            await base.OnConnectedAsync();
+            return;
+        }
+
         var playerId = Context.User?.FindFirst("PlayerId")?.Value
-            ?? Context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? Context.User?.FindFirst("sub")?.Value;
 
         Console.WriteLine($"[LobbyHub] OnConnectedAsync: ConnectionId={Context.ConnectionId}, PlayerId={playerId}, Authenticated={Context.User?.Identity?.IsAuthenticated}");
@@ -45,16 +66,21 @@ public class LobbyHub : Hub
 
             if (_presenceTracker.AddConnection(playerId, Context.ConnectionId))
             {
+                var status = _presenceTracker.GetStatus(playerId);
+                var payload = new FriendPresenceUpdateDto(
+                    playerId,
+                    IsOnline: true,
+                    Status: status
+                );
+
                 var friendIds = await _friendshipService.GetFriendPlayerIdsAsync(playerId);
-                Console.WriteLine($"[LobbyHub] Player {playerId} registered online. Notifying {friendIds.Count} friends.");
+                Console.WriteLine($"[LobbyHub] Player {playerId} registered online ({status}). Notifying {friendIds.Count} friends and Admins.");
                 if (friendIds.Count > 0)
                 {
-                    await Clients.Groups(friendIds).SendAsync("OnFriendPresenceChanged", new FriendPresenceUpdateDto(
-                        playerId,
-                        IsOnline: true,
-                        Status: _presenceTracker.GetStatus(playerId)
-                    ));
+                    await Clients.Groups(friendIds).SendAsync("OnFriendPresenceChanged", payload);
                 }
+
+                await Clients.Group(AdminsGroup).SendAsync("OnPlayerPresenceChanged", payload);
             }
         }
         await base.OnConnectedAsync();
@@ -62,8 +88,15 @@ public class LobbyHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        if (IsStaff(Context.User))
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, AdminsGroup);
+            await base.OnDisconnectedAsync(exception);
+            return;
+        }
+
         var playerId = Context.User?.FindFirst("PlayerId")?.Value
-            ?? Context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? Context.User?.FindFirst("sub")?.Value;
 
         Console.WriteLine($"[LobbyHub] OnDisconnectedAsync: ConnectionId={Context.ConnectionId}, PlayerId={playerId}");
@@ -74,19 +107,32 @@ public class LobbyHub : Hub
 
             if (_presenceTracker.RemoveConnection(playerId, Context.ConnectionId))
             {
+                var offlinePayload = new FriendPresenceUpdateDto(
+                    playerId,
+                    IsOnline: false,
+                    Status: "offline"
+                );
+
                 var friendIds = await _friendshipService.GetFriendPlayerIdsAsync(playerId);
-                Console.WriteLine($"[LobbyHub] Player {playerId} went offline. Notifying {friendIds.Count} friends.");
+                Console.WriteLine($"[LobbyHub] Player {playerId} went offline. Notifying {friendIds.Count} friends and Admins.");
                 if (friendIds.Count > 0)
                 {
-                    await Clients.Groups(friendIds).SendAsync("OnFriendPresenceChanged", new FriendPresenceUpdateDto(
-                        playerId,
-                        IsOnline: false,
-                        Status: "offline"
-                    ));
+                    await Clients.Groups(friendIds).SendAsync("OnFriendPresenceChanged", offlinePayload);
                 }
+
+                await Clients.Group(AdminsGroup).SendAsync("OnPlayerPresenceChanged", offlinePayload);
             }
         }
         await base.OnDisconnectedAsync(exception);
+    }
+
+    public Task<IReadOnlyDictionary<string, string>> GetOnlinePlayers()
+    {
+        if (!IsStaff(Context.User))
+        {
+            throw new HubException("Forbidden");
+        }
+        return Task.FromResult(_presenceTracker.GetAllOnlineStatuses());
     }
 
     public async Task<string> SendMatchInvite(string targetPlayerId)
@@ -145,6 +191,17 @@ public class LobbyHub : Hub
 
         _presenceTracker.SetInMatch(invite.SenderPlayerId, true);
         _presenceTracker.SetInMatch(receiverId, true);
+
+        await Clients.Group(AdminsGroup).SendAsync("OnPlayerPresenceChanged", new FriendPresenceUpdateDto(
+            invite.SenderPlayerId,
+            IsOnline: true,
+            Status: "in_match"
+        ));
+        await Clients.Group(AdminsGroup).SendAsync("OnPlayerPresenceChanged", new FriendPresenceUpdateDto(
+            receiverId,
+            IsOnline: true,
+            Status: "in_match"
+        ));
 
         var p1 = await _profileService.GetByFilterAsync(p => p.PlayerId == match.Player1Id);
         var p2 = await _profileService.GetByFilterAsync(p => p.PlayerId == match.Player2Id);

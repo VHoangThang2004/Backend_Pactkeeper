@@ -8,4 +8,5 @@ public interface IUserPresenceTracker
     void SetInMatch(string playerId, bool inMatch);
     bool IsInMatch(string playerId);
     string GetStatus(string playerId);
+    IReadOnlyDictionary<string, string> GetAllOnlineStatuses();
 }

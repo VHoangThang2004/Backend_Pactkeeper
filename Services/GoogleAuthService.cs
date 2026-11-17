@@ -67,17 +67,30 @@ public class GoogleAuthService(
 
         var user = await _userRepository.GetByFilterAsync(u => u.LoginProviders.GoogleId == googleId);
 
+        var now = DateTime.UtcNow;
         if (user == null)
         {
             user = new User
             {
                 Username = string.IsNullOrEmpty(name) ? $"Google_{googleId.Substring(0, Math.Min(6, googleId.Length))}" : name,
                 Role = "Player",
-                LoginProviders = new LoginProviders { GoogleId = googleId }
+                LoginProviders = new LoginProviders { GoogleId = googleId },
+                LastLoginAt = now
             };
             await _userRepository.CreateAsync(user);
             await _profileService.CreateInitialProfileAsync(user.Id, user.Username);
             Console.WriteLine($"[GoogleAuth] Created new user for GoogleId {googleId}");
+        }
+        else
+        {
+            user.LastLoginAt = now;
+            await _userRepository.UpdateAsync(user.Id, user);
+            var profile = await _profileService.GetByFilterAsync(p => p.PlayerId == user.Id);
+            if (profile != null)
+            {
+                profile.LastLogin = now;
+                await _profileService.UpdateAsync(profile.Id, profile);
+            }
         }
 
         return new AuthResponseDto(GenerateJwtToken(user), user.Role, user.Username, user.Id);

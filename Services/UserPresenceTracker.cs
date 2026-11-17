@@ -59,4 +59,20 @@ public class UserPresenceTracker : IUserPresenceTracker
         if (IsInMatch(playerId)) return "in_match";
         return "idle";
     }
+
+    public IReadOnlyDictionary<string, string> GetAllOnlineStatuses()
+    {
+        lock (_onlineUsers)
+        {
+            var snapshot = new Dictionary<string, string>(_onlineUsers.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in _onlineUsers)
+            {
+                if (kvp.Value.Count > 0)
+                {
+                    snapshot[kvp.Key] = IsInMatch(kvp.Key) ? "in_match" : "idle";
+                }
+            }
+            return snapshot;
+        }
+    }
 }

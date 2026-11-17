@@ -1,5 +1,8 @@
+using GameInventoryApi.DTOs;
+using GameInventoryApi.Hubs;
 using GameInventoryApi.Models;
 using GameInventoryApi.Repositories;
+using Microsoft.AspNetCore.SignalR;
 using MongoDB.Driver;
 
 namespace GameInventoryApi.Services;
@@ -10,14 +13,16 @@ public class MatchSessionService : IMatchSessionService
     private readonly MatchmakingService _matchmakingService;
     private readonly IMatchQueueService _queueService;
     private readonly IUserPresenceTracker _presenceTracker;
+    private readonly IHubContext<LobbyHub> _lobbyHub;
 
     public MatchSessionService(IMongoRepository<MatchSession> repository, MatchmakingService matchmakingService,
-        IMatchQueueService queueService, IUserPresenceTracker presenceTracker)
+        IMatchQueueService queueService, IUserPresenceTracker presenceTracker, IHubContext<LobbyHub> lobbyHub)
     {
         _repository = repository;
         _matchmakingService = matchmakingService;
         _queueService = queueService;
         _presenceTracker = presenceTracker;
+        _lobbyHub = lobbyHub;
     }
     public Task<MatchSession?> GetByMatchIdAsync(string matchId)
         => _repository.GetByFilterAsync(m => m.MatchId == matchId);
@@ -42,6 +47,15 @@ public class MatchSessionService : IMatchSessionService
             SceneId = sceneId
         };
         await _repository.CreateAsync(match);
+
+        foreach (var pid in new[] { player1Id, player2Id })
+        {
+            if (string.IsNullOrWhiteSpace(pid) || string.Equals(pid, "AI", StringComparison.OrdinalIgnoreCase))
+                continue;
+            _presenceTracker.SetInMatch(pid, true);
+            await NotifyAdminPresenceAsync(pid, isOnline: true, status: "in_match");
+        }
+
         return match;
     }
     public async Task UpdateStatusAsync(string matchId, string status, MatchResultData? result = null)
@@ -85,6 +99,13 @@ public class MatchSessionService : IMatchSessionService
     {
         var match = await GetByMatchIdAsync(matchId);
         if (match == null) return;
+        foreach (var pid in new[] { match.Player1Id, match.Player2Id })
+        {
+            if (string.IsNullOrWhiteSpace(pid) || string.Equals(pid, "AI", StringComparison.OrdinalIgnoreCase))
+                continue;
+            _presenceTracker.SetInMatch(pid, false);
+            await NotifyAdminPresenceAsync(pid, _presenceTracker.IsOnline(pid), _presenceTracker.GetStatus(pid));
+        }
         await _repository.DeleteAsync(match.Id);
     }
 
@@ -93,8 +114,11 @@ public class MatchSessionService : IMatchSessionService
         // Free the players first: a leftover "matched" queue entry blocks re-queueing
         foreach (var playerId in new[] { match.Player1Id, match.Player2Id })
         {
+            if (string.IsNullOrWhiteSpace(playerId) || string.Equals(playerId, "AI", StringComparison.OrdinalIgnoreCase))
+                continue;
             _presenceTracker.SetInMatch(playerId, false);
             await _queueService.RemoveByPlayerIdAsync(playerId);
+            await NotifyAdminPresenceAsync(playerId, _presenceTracker.IsOnline(playerId), _presenceTracker.GetStatus(playerId));
         }
 
         if (!_matchmakingService.StopMatchServer(match.ProcessId, match.MatchId))
@@ -118,5 +142,20 @@ public class MatchSessionService : IMatchSessionService
     {
         foreach (var session in await _repository.GetAllAsync())
             await TerminateMatchAsync(session, "admin ended all matches");
+    }
+
+    private async Task NotifyAdminPresenceAsync(string playerId, bool isOnline, string status)
+    {
+        try
+        {
+            await _lobbyHub.Clients.Group(LobbyHub.AdminsGroup).SendAsync(
+                "OnPlayerPresenceChanged",
+                new FriendPresenceUpdateDto(playerId, isOnline, status)
+            );
+        }
+        catch
+        {
+            // Presence broadcast is best-effort and must not block match lifecycle updates.
+        }
     }
 }

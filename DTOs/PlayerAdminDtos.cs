@@ -12,6 +12,8 @@ public class AdminPlayerProfileDto
     public bool IsBanned { get; set; } = false;
     public string? BanReason { get; set; }
     public DateTime LastLogin { get; set; } = DateTime.UtcNow;
+    public bool IsOnline { get; set; } = false;
+    public string PresenceStatus { get; set; } = "offline";
     public int OwnedUnitsCount { get; set; }
     public int OwnedWeaponsCount { get; set; }
     public int OwnedTrinketsCount { get; set; }

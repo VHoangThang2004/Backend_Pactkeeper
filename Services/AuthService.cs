@@ -139,9 +139,20 @@ public class AuthService : IAuthService
             permissions = AdminSecurityHelper.ResolveEffectivePermissions(user, roles);
         }
 
-        user.LastLoginAt = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+        user.LastLoginAt = now;
         user.LastLoginIp = ipAddress ?? user.LastLoginIp;
         await _userRepository.UpdateAsync(user.Id, user);
+
+        if (isPlayer)
+        {
+            var profile = await _profileRepository.GetByFilterAsync(p => p.PlayerId == user.Id);
+            if (profile != null)
+            {
+                profile.LastLogin = now;
+                await _profileRepository.UpdateAsync(profile.Id, profile);
+            }
+        }
 
         if (!isPlayer)
         {

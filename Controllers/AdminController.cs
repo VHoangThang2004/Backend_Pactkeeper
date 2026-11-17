@@ -8,21 +8,40 @@ namespace GameInventoryApi.Controllers;
 
 [ApiController]
 [Route("api/admin")]
-[Authorize(Roles = "Admin,Technical Support,Support")]
+[Authorize]
 public class AdminController : ControllerBase
 {
     private readonly IMatchSessionService _matchSessionService;
     private readonly IMatchQueueService _matchQueueService;
     private readonly ServerState _serverState;
+    private readonly IUserPresenceTracker _presenceTracker;
 
-    public AdminController(IMatchSessionService matchSessionService, IMatchQueueService matchQueueService, ServerState serverState)
+    public AdminController(
+        IMatchSessionService matchSessionService,
+        IMatchQueueService matchQueueService,
+        ServerState serverState,
+        IUserPresenceTracker presenceTracker)
     {
         _matchSessionService = matchSessionService;
         _matchQueueService = matchQueueService;
         _serverState = serverState;
+        _presenceTracker = presenceTracker;
+    }
+
+    [HttpGet("online-players")]
+    [Authorize(Roles = "Admin,Moderator,Technical Support,Support")]
+    public IActionResult GetOnlinePlayers()
+    {
+        var onlinePlayers = _presenceTracker.GetAllOnlineStatuses();
+        return Ok(new
+        {
+            onlinePlayers,
+            count = onlinePlayers.Count
+        });
     }
 
     [HttpGet("system-state")]
+    [Authorize(Roles = "Admin,Technical Support,Support")]
     public IActionResult GetSystemState()
     {
         return Ok(new
@@ -33,6 +52,7 @@ public class AdminController : ControllerBase
     }
     
     [HttpPost("force-stop-all")]
+    [Authorize(Roles = "Admin,Technical Support,Support")]
     public async Task<IActionResult> ForceReset()
     {
         await _matchSessionService.EndAllMatchesAsync();
@@ -41,6 +61,7 @@ public class AdminController : ControllerBase
     }
 
     [HttpPost("update-login-status")]
+    [Authorize(Roles = "Admin,Technical Support,Support")]
     public IActionResult UpdateLoginStatus([FromBody] bool blocked)
     {
         _serverState.LoginBlocked = blocked;
@@ -48,6 +69,7 @@ public class AdminController : ControllerBase
     }
 
     [HttpPost("update-queue-status")]
+    [Authorize(Roles = "Admin,Technical Support,Support")]
     public IActionResult UpdateQueueStatus([FromBody] bool blocked)
     {
         _serverState.MatchmakingBlocked = blocked;

@@ -28,8 +28,9 @@ public class TopUpPackController : ControllerBase
         _trinketService = trinketService;
     }
 
-    // GET /api/topuppack  — available packs for the shop
+    // GET /api/topuppack  — available packs for the shop (publicly viewable by Guests too)
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<List<TopUpPackDto>>> GetAvailable()
     {
         var packs = await _service.GetAvailableAsync();

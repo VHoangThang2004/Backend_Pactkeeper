@@ -15,7 +15,8 @@ public record CreateGachaBannerDto(
     List<PullOptionDto> PullOptions,
     DateTime? StartDate,
     DateTime? ExpiryDate,
-    int? PityThreshold
+    int? PityThreshold,
+    string? BannerImageUrl = null
 );
 
 public record UpdateGachaBannerDto(
@@ -25,7 +26,8 @@ public record UpdateGachaBannerDto(
     List<PullOptionDto> PullOptions,
     DateTime? StartDate,
     DateTime? ExpiryDate,
-    int? PityThreshold
+    int? PityThreshold,
+    string? BannerImageUrl = null
 );
 
 public record DropRateItemDto(
@@ -47,5 +49,18 @@ public record GachaBannerDto(
     DateTime? StartDate,
     DateTime? ExpiryDate,
     int? PityThreshold,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string? BannerImageUrl = null
+);
+
+public record GachaBannerStatsDto(
+    string BannerId,
+    string BannerName,
+    int TotalPullTransactions,
+    int TotalDraws,
+    long TotalGemsSpent,
+    int UniquePlayers,
+    int DuplicateDraws,
+    long CompensationGemsAwarded,
+    Dictionary<int, int> DrawsByTier
 );

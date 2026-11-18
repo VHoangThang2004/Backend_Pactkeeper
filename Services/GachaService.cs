@@ -51,15 +51,83 @@ public class GachaService(
         // Deduct cost upfront
         profile.Gems -= option.Price;
 
-        // Perform draws
-        int totalWeight = banner.Items.Sum(i => i.Weight);
+        // Perform draws with hard-pity & 50/50 featured tracking
+        int totalWeight = banner.Items.Sum(i => Math.Max(0, i.Weight));
+        if (totalWeight <= 0)
+        {
+            return (null, "Banner reward pool weights must total more than 0.");
+        }
+
+        profile.GachaPityByBanner ??= new Dictionary<string, GachaPityState>();
+        if (!profile.GachaPityByBanner.TryGetValue(bannerId, out var pityState))
+        {
+            pityState = new GachaPityState();
+            profile.GachaPityByBanner[bannerId] = pityState;
+        }
+
+        var highTierItems = banner.Items.Where(i => i.IsFeatured || i.RewardTier >= 3).ToList();
+        if (highTierItems.Count == 0)
+        {
+            int maxTier = banner.Items.Max(i => i.RewardTier);
+            highTierItems = banner.Items.Where(i => i.RewardTier == maxTier).ToList();
+        }
+        var featuredItems = banner.Items.Where(i => i.IsFeatured).ToList();
+        var nonFeaturedHighTier = highTierItems.Where(i => !i.IsFeatured).ToList();
+
         var results = new List<GachaPullResultItemDto>();
         var itemsWon = new List<GachaResultItem>();
         int rarestTier = 0;
 
         for (int i = 0; i < PullCount(pullType); i++)
         {
-            var item = DrawItem(banner.Items, totalWeight);
+            pityState.PullsSinceRare++;
+
+            BannerItem item;
+            bool pityTriggered = banner.PityThreshold is int threshold
+                && threshold > 0
+                && pityState.PullsSinceRare >= threshold
+                && highTierItems.Count > 0;
+
+            if (pityTriggered)
+            {
+                if (featuredItems.Count > 0)
+                {
+                    if (pityState.GuaranteedFeatured || nonFeaturedHighTier.Count == 0)
+                    {
+                        item = DrawWeightedItem(featuredItems);
+                        pityState.GuaranteedFeatured = false;
+                    }
+                    else if (Random.Shared.Next(2) == 0)
+                    {
+                        item = DrawWeightedItem(featuredItems);
+                        pityState.GuaranteedFeatured = false;
+                    }
+                    else
+                    {
+                        item = DrawWeightedItem(nonFeaturedHighTier);
+                        pityState.GuaranteedFeatured = true;
+                    }
+                }
+                else
+                {
+                    item = DrawWeightedItem(highTierItems);
+                }
+
+                pityState.PullsSinceRare = 0;
+            }
+            else
+            {
+                item = DrawWeightedItem(banner.Items);
+                if (item.IsFeatured || item.RewardTier >= 3)
+                {
+                    pityState.PullsSinceRare = 0;
+                    if (featuredItems.Count > 0)
+                    {
+                        pityState.GuaranteedFeatured = !item.IsFeatured;
+                    }
+                }
+            }
+
             var (isDuplicate, compensationGems) = PlayerProfileService.ApplyReward(profile, item.Reward, item.RewardTier);
             results.Add(new GachaPullResultItemDto(
                 new RewardDto(item.Reward.Type, item.Reward.DefinitionId, item.Reward.ClassId, item.Reward.Amount),
@@ -137,13 +205,19 @@ public class GachaService(
         return new GachaHistoryResponseDto(paged, totalCount, page, pageSize, totalPages);
     }
 
-    private static BannerItem DrawItem(List<BannerItem> items, int totalWeight)
+    private static BannerItem DrawWeightedItem(IReadOnlyList<BannerItem> items)
     {
+        int totalWeight = items.Sum(i => Math.Max(0, i.Weight));
+        if (totalWeight <= 0)
+        {
+            return items[Random.Shared.Next(0, items.Count)];
+        }
+
         int roll = Random.Shared.Next(0, totalWeight);
         int cumulative = 0;
         foreach (var item in items)
         {
-            cumulative += item.Weight;
+            cumulative += Math.Max(0, item.Weight);
             if (roll < cumulative) return item;
         }
         return items[^1];

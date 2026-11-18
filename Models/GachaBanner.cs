@@ -21,6 +21,7 @@ public class PullOption
     public int Price { get; set; }  // cost in gems
 }
 
+[BsonIgnoreExtraElements]
 public class GachaBanner
 {
     [BsonId]
@@ -29,6 +30,7 @@ public class GachaBanner
 
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string? BannerImageUrl { get; set; }
     public List<BannerItem> Items { get; set; } = [];
     public List<PullOption> PullOptions { get; set; } = [];
     public bool IsActive { get; set; } = false;

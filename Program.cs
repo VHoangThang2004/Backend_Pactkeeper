@@ -155,6 +155,13 @@ builder.Services.AddScoped<IRewardEvaluationService, RewardEvaluationService>();
 builder.Services.AddScoped<IRewardRuleService, RewardRuleService>();
 builder.Services.AddScoped<IRewardProgressService, RewardProgressService>();
 
+builder.Services.AddScoped<IMongoRepository<AdminRoleDefinition>>(sp =>
+    new MongoRepository<AdminRoleDefinition>(sp.GetRequiredService<IMongoDatabase>(), "AdminRoles"));
+builder.Services.AddScoped<IMongoRepository<AdminAuditLog>>(sp =>
+    new MongoRepository<AdminAuditLog>(sp.GetRequiredService<IMongoDatabase>(), "AdminAuditLogs"));
+builder.Services.AddScoped<IMongoRepository<AdminLoginHistory>>(sp =>
+    new MongoRepository<AdminLoginHistory>(sp.GetRequiredService<IMongoDatabase>(), "AdminLoginHistory"));
+builder.Services.AddScoped<IAdminSecurityService, AdminSecurityService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.Configure<SteamSettings>(builder.Configuration.GetSection("SteamSettings"));
 builder.Services.AddHttpClient<ISteamAuthService, SteamAuthService>();

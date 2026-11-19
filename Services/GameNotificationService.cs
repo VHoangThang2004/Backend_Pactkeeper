@@ -11,10 +11,12 @@ public class GameNotificationService(IMongoRepository<GameNotification> reposito
     {
         var now = DateTime.UtcNow;
         var list = await _repository.GetAllByFilterAsync(n =>
-            (n.PlayerId == playerId || string.IsNullOrEmpty(n.PlayerId) || n.PlayerId == "*")
-            && (n.ExpiresAt == null || n.ExpiresAt > now));
+            n.PlayerId == playerId || n.PlayerId == null || n.PlayerId == "" || n.PlayerId == "*");
 
-        return list.OrderByDescending(n => n.CreatedAt).ToList();
+        return list
+            .Where(n => n.ExpiresAt == null || n.ExpiresAt > now)
+            .OrderByDescending(n => n.CreatedAt)
+            .ToList();
     }
 
     public async Task<bool> MarkAsReadAsync(string playerId, string notificationId)
@@ -46,20 +48,19 @@ public class GameNotificationService(IMongoRepository<GameNotification> reposito
     {
         var now = DateTime.UtcNow;
         var playerNotifs = await _repository.GetAllByFilterAsync(n =>
-            n.PlayerId == playerId && !n.Read && (n.ExpiresAt == null || n.ExpiresAt > now));
+            n.PlayerId == playerId && !n.Read);
 
-        foreach (var notif in playerNotifs)
+        foreach (var notif in playerNotifs.Where(n => n.ExpiresAt == null || n.ExpiresAt > now))
         {
             notif.Read = true;
             await _repository.UpdateAsync(notif.Id, notif);
         }
 
         var globalNotifs = await _repository.GetAllByFilterAsync(n =>
-            (string.IsNullOrEmpty(n.PlayerId) || n.PlayerId == "*")
-            && !n.ReadByPlayerIds.Contains(playerId)
-            && (n.ExpiresAt == null || n.ExpiresAt > now));
+            (n.PlayerId == null || n.PlayerId == "" || n.PlayerId == "*")
+            && !n.ReadByPlayerIds.Contains(playerId));
 
-        foreach (var notif in globalNotifs)
+        foreach (var notif in globalNotifs.Where(n => n.ExpiresAt == null || n.ExpiresAt > now))
         {
             notif.ReadByPlayerIds.Add(playerId);
             await _repository.UpdateAsync(notif.Id, notif);

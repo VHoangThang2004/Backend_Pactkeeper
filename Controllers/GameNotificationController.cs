@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,13 +12,18 @@ public class GameNotificationController(IGameNotificationService gameNotificatio
 {
     private readonly IGameNotificationService _gameNotificationService = gameNotificationService;
 
+    private string? GetPlayerId() =>
+        User.FindFirst("PlayerId")?.Value
+        ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? User.FindFirst("sub")?.Value;
+
     // GET /api/game-notification
     [HttpGet]
     [Authorize(Roles = "Player,Admin")]
     public async Task<ActionResult<List<GameNotificationDto>>> GetNotifications()
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
-        if (playerId == null) return Unauthorized();
+        var playerId = GetPlayerId();
+        if (playerId == null) return Unauthorized(new { message = "No PlayerId claim found in token. Please log in as a Player and authorize in Swagger." });
 
         var list = await _gameNotificationService.GetPlayerGameNotificationsAsync(playerId);
         var result = list.Select(n =>
@@ -41,8 +47,8 @@ public class GameNotificationController(IGameNotificationService gameNotificatio
     [HttpPost("{id}/read")]
     public async Task<IActionResult> MarkAsRead(string id)
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
-        if (playerId == null) return Unauthorized();
+        var playerId = GetPlayerId();
+        if (playerId == null) return Unauthorized(new { message = "No PlayerId claim found in token." });
 
         var success = await _gameNotificationService.MarkAsReadAsync(playerId, id);
         if (!success) return NotFound();
@@ -54,8 +60,8 @@ public class GameNotificationController(IGameNotificationService gameNotificatio
     [HttpPost("read-all")]
     public async Task<IActionResult> MarkAllAsRead()
     {
-        var playerId = User.FindFirst("PlayerId")?.Value;
-        if (playerId == null) return Unauthorized();
+        var playerId = GetPlayerId();
+        if (playerId == null) return Unauthorized(new { message = "No PlayerId claim found in token." });
 
         await _gameNotificationService.MarkAllAsReadAsync(playerId);
         return Ok();

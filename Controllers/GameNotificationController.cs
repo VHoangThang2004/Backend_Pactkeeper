@@ -6,13 +6,14 @@ namespace GameInventoryApi.Controllers;
 
 [ApiController]
 [Route("api/game-notification")]
-[Authorize(Roles = "Player")]
+[Authorize]
 public class GameNotificationController(IGameNotificationService gameNotificationService) : ControllerBase
 {
     private readonly IGameNotificationService _gameNotificationService = gameNotificationService;
 
     // GET /api/game-notification
     [HttpGet]
+    [Authorize(Roles = "Player,Admin")]
     public async Task<ActionResult<List<GameNotificationDto>>> GetNotifications()
     {
         var playerId = User.FindFirst("PlayerId")?.Value;
@@ -62,7 +63,7 @@ public class GameNotificationController(IGameNotificationService gameNotificatio
 
     // POST /api/game-notification (Admin broadcast or target send)
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Moderator")]
     public async Task<ActionResult<GameNotificationDto>> CreateNotification([FromBody] CreateGameNotificationRequestDto dto)
     {
         var notif = await _gameNotificationService.CreateGameNotificationAsync(

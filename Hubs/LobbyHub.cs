@@ -17,6 +17,7 @@ public class LobbyHub : Hub
     private readonly IMatchSessionService _matchService;
     private readonly MatchmakingService _matchmaker;
     private readonly IPlayerProfileService _profileService;
+    private readonly IChatMessageService _chatService;
 
     public LobbyHub(
         IUserPresenceTracker presenceTracker,
@@ -24,7 +25,8 @@ public class LobbyHub : Hub
         IFriendlyInviteService inviteService,
         IMatchSessionService matchService,
         MatchmakingService matchmaker,
-        IPlayerProfileService profileService)
+        IPlayerProfileService profileService,
+        IChatMessageService chatService)
     {
         _presenceTracker = presenceTracker;
         _friendshipService = friendshipService;
@@ -32,6 +34,7 @@ public class LobbyHub : Hub
         _matchService = matchService;
         _matchmaker = matchmaker;
         _profileService = profileService;
+        _chatService = chatService;
     }
 
     private static bool IsStaff(ClaimsPrincipal? user)
@@ -243,6 +246,26 @@ public class LobbyHub : Hub
         {
             await _inviteService.MarkCancelledAsync(inviteId, senderId);
             await Clients.Group(invite.TargetPlayerId).SendAsync("MatchInviteCancelled", inviteId);
+        }
+    }
+
+    public async Task<ChatMessageDto> SendDirectMessage(string receiverId, string text)
+    {
+        var senderId = Context.User?.FindFirst("PlayerId")?.Value
+            ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? Context.User?.FindFirst("sub")?.Value;
+
+        if (string.IsNullOrEmpty(senderId)) throw new HubException("Unauthorized");
+
+        try
+        {
+            var message = await _chatService.SendMessageAsync(senderId, receiverId, text);
+            await Clients.Group(receiverId).SendAsync("ReceiveDirectMessage", message);
+            return message;
+        }
+        catch (InvalidOperationException ex) when (ex.Message == "not_friends")
+        {
+            throw new HubException("not_friends");
         }
     }
 }

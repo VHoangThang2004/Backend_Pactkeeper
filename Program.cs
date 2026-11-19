@@ -76,6 +76,9 @@ builder.Services.AddScoped<IMongoRepository<GameNotification>>(sp =>
 builder.Services.AddScoped<IMongoRepository<SupportMessage>>(sp =>
     new MongoRepository<SupportMessage>(sp.GetRequiredService<IMongoDatabase>(), "SupportMessages"));
 
+builder.Services.AddScoped<IMongoRepository<ChatMessage>>(sp =>
+    new MongoRepository<ChatMessage>(sp.GetRequiredService<IMongoDatabase>(), "ChatMessages"));
+
 builder.Services.AddScoped<IMongoRepository<TopUpPack>>(sp =>
     new MongoRepository<TopUpPack>(sp.GetRequiredService<IMongoDatabase>(), "TopUpPacks"));
 
@@ -115,6 +118,7 @@ builder.Services.AddScoped<ITopUpPackService, TopUpPackService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IGameNotificationService, GameNotificationService>();
 builder.Services.AddScoped<ISupportService, SupportService>();
+builder.Services.AddScoped<IChatMessageService, ChatMessageService>();
 
 builder.Services.AddSingleton<IUserPresenceTracker, UserPresenceTracker>();
 builder.Services.AddScoped<IMongoRepository<Friendship>>(sp =>

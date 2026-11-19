@@ -6,6 +6,7 @@ namespace GameInventoryApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Route("api/missives")]
 [Authorize(Roles = "Player")]
 public class NotificationController(INotificationService notificationService) : ControllerBase
 {

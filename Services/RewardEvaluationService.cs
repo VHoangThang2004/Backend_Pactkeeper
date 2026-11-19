@@ -7,8 +7,7 @@ namespace GameInventoryApi.Services;
 
 public class RewardEvaluationService(
     IMongoRepository<RewardRule> ruleRepository,
-    IMongoRepository<RewardProgress> progressRepository,
-    INotificationService notificationService) : IRewardEvaluationService
+    IMongoRepository<RewardProgress> progressRepository) : IRewardEvaluationService
 {
     public async Task EvaluateAsync(Action action)
     {
@@ -48,11 +47,6 @@ public class RewardEvaluationService(
                 progress.CompletedAt = DateTime.UtcNow;
 
                 // Reward is granted on claim (see RewardProgressController), not here.
-                await notificationService.CreateNotificationAsync(
-                    action.PlayerId,
-                    "success",
-                    "Objective Complete",
-                    $"You've completed a {rule.ActionType} objective. Claim your reward!");
             }
 
             await progressRepository.UpdateAsync(progress.Id, progress);

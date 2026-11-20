@@ -453,7 +453,38 @@ public class StoryController : ControllerBase
             new StoryProgressDto(p.ChapterId, p.SceneId, p.IsCompleted, p.IsChapterCompleted))
             .ToList());
     }
+
+    // -------------------------------------------------------
+    // GET /api/story/admin/player/{playerId} — inspect a player's story checkpoints
+    // -------------------------------------------------------
+    [HttpGet("admin/player/{playerId}")]
+    [Authorize(Roles = "Admin,Moderator,Technical Support,Support")]
+    public async Task<ActionResult<List<AdminStoryProgressDto>>> GetPlayerStoryProgress(string playerId)
+    {
+        var all = await _storyService.GetAllAsync(playerId.Trim());
+        return Ok(all
+            .OrderBy(p => p.ChapterId)
+            .Select(p => new AdminStoryProgressDto(
+                p.ChapterId,
+                p.SceneId,
+                p.IsCompleted,
+                p.IsChapterCompleted,
+                p.StartedAt,
+                p.UpdatedAt,
+                p.CompletedAt))
+            .ToList());
+    }
 }
+
+public record AdminStoryProgressDto(
+    int ChapterId,
+    int SceneId,
+    bool IsCompleted,
+    bool IsChapterCompleted,
+    DateTime StartedAt,
+    DateTime UpdatedAt,
+    DateTime? CompletedAt
+);
 
 public record CurrentProgressDto(
     int ChapterId,

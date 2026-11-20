@@ -25,6 +25,23 @@ public class TopUpPackService : ITopUpPackService
         return pack;
     }
 
+    public async Task<TopUpPack?> UpdateAsync(string id, TopUpPack updated)
+    {
+        var existing = await _repository.GetByIdAsync(id);
+        if (existing == null) return null;
+
+        existing.Name = updated.Name;
+        existing.PriceVnd = updated.PriceVnd;
+        existing.GemsAmount = updated.GemsAmount;
+        existing.WeaponDefinitionIds = updated.WeaponDefinitionIds;
+        existing.TrinketDefinitionIds = updated.TrinketDefinitionIds;
+        existing.UnitDefinitionIds = updated.UnitDefinitionIds;
+        existing.IsAvailable = updated.IsAvailable;
+
+        await _repository.UpdateAsync(id, existing);
+        return existing;
+    }
+
     public async Task UpdateAvailabilityAsync(string id, bool isAvailable)
     {
         var pack = await _repository.GetByIdAsync(id);

@@ -23,4 +23,14 @@ public record CreateTopUpPackDto(
     List<int> UnitDefinitionIds
 );
 
+public record UpdateTopUpPackDto(
+    string Name,
+    int PriceVnd,
+    int GemsAmount,
+    List<int> WeaponDefinitionIds,
+    List<int> TrinketDefinitionIds,
+    List<int> UnitDefinitionIds,
+    bool IsAvailable
+);
+
 public record UpdateTopUpPackAvailabilityDto(bool IsAvailable);

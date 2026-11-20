@@ -112,6 +112,36 @@ public class TopUpPackController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, ToDto(created, unitMap, weaponMap, trinketMap));
     }
 
+    // PUT /api/topuppack/{id}
+    [HttpPut("{id}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<TopUpPackDto>> Update(string id, [FromBody] UpdateTopUpPackDto dto)
+    {
+        var updated = await _service.UpdateAsync(id, new TopUpPack
+        {
+            Id = id,
+            Name = dto.Name,
+            PriceVnd = dto.PriceVnd,
+            GemsAmount = dto.GemsAmount,
+            WeaponDefinitionIds = dto.WeaponDefinitionIds ?? [],
+            TrinketDefinitionIds = dto.TrinketDefinitionIds ?? [],
+            UnitDefinitionIds = dto.UnitDefinitionIds ?? [],
+            IsAvailable = dto.IsAvailable,
+        });
+
+        if (updated == null) return NotFound();
+
+        var units = await _unitService.GetAllAsync();
+        var weapons = await _weaponService.GetAllAsync();
+        var trinkets = await _trinketService.GetAllAsync();
+
+        var unitMap = units.ToDictionary(u => u.UId, u => u.UnitName);
+        var weaponMap = weapons.ToDictionary(w => w.WeaponId, w => w.Name);
+        var trinketMap = trinkets.ToDictionary(t => t.TrinketId, t => t.Name);
+
+        return Ok(ToDto(updated, unitMap, weaponMap, trinketMap));
+    }
+
     // PATCH /api/topuppack/{id}/availability
     [HttpPatch("{id}/availability")]
     [Authorize(Roles = "Admin")]

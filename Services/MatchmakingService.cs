@@ -30,10 +30,10 @@ public class MatchmakingService : BackgroundService
             {
                 if (_activePorts.Contains(port)) continue;
                 // Our bookkeeping can be wrong (orphan server from before a backend restart, failed kill):
-                // ask the OS too, or the new server fails to bind and the match is dead on arrival.
-                if (!IsUdpPortFree(port))
+                // ask the OS too (both TCP for WebSockets/UnityTransport and UDP), or the new server fails to bind and the match is dead on arrival.
+                if (!IsPortFree(port))
                 {
-                    Console.WriteLine($"[Matchmaking] Port {port} is free in bookkeeping but bound by another process — skipping.");
+                    Console.WriteLine($"[Matchmaking] Port {port} is free in bookkeeping but bound by another TCP/UDP process — skipping.");
                     continue;
                 }
                 _activePorts.Add(port);
@@ -43,11 +43,15 @@ public class MatchmakingService : BackgroundService
         }
     }
 
-    private static bool IsUdpPortFree(int port)
+    private static bool IsPortFree(int port)
     {
         try
         {
-            using var probe = new System.Net.Sockets.UdpClient(new System.Net.IPEndPoint(System.Net.IPAddress.Any, port));
+            var tcpProbe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Any, port);
+            tcpProbe.Start();
+            tcpProbe.Stop();
+
+            using var udpProbe = new System.Net.Sockets.UdpClient(new System.Net.IPEndPoint(System.Net.IPAddress.Any, port));
             return true;
         }
         catch (System.Net.Sockets.SocketException) { return false; }
@@ -571,6 +575,7 @@ public class MatchmakingService : BackgroundService
         (2, 2) => "MD_PVE_C2S2",
         (3, 1) => "MD_PVE_C3S1",
         (3, 2) => "MD_PVE_C3S2",
+        (4, 1) => "MD_PVE_C4S1",
         _ => "MD_PVP_001"
     };
 }

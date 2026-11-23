@@ -178,6 +178,24 @@ public static class SeedData
                         Description = "3.2 - The Unifier's Trial",
                         MapId = "MD_PVE_C3S2",
                         AutoResume = false,
+                        AutoAdvance = true
+                    },
+                }
+            },
+            new ChapterConfig
+            {
+                ChapterId = 4,
+                Title = "Chapter 4 - Throne of the Eclipse",
+                MapId = "MD_PVE_C4S1",
+                Scenes = new List<SceneConfig>
+                {
+                    new SceneConfig
+                    {
+                        SceneId = 1,
+                        Type = SceneType.Battle,
+                        Description = "4.1 - Sovereign of the Broken Pact",
+                        MapId = "MD_PVE_C4S1",
+                        AutoResume = false,
                         AutoAdvance = false
                     },
                 }
@@ -190,7 +208,7 @@ public static class SeedData
             await chapters.InsertOneAsync(config);
         }
 
-        Console.WriteLine("[Seed] ChapterConfigs (Chapters 0..3) seeded with AutoResume=false for Ch1..3.");
+        Console.WriteLine("[Seed] ChapterConfigs (Chapters 0..4) upserted with AutoResume=false for Ch1..4.");
     }
 
     private static async Task SeedLibraryAsync(IMongoDatabase database)

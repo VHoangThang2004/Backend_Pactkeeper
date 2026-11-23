@@ -109,8 +109,8 @@ public class StoryController : ControllerBase
         if (currentScene == null)
             return NotFound("Scene config not found.");
 
-        // Tutorial battles (Ch0..Ch3) are completed by the client (BattleTutorialStarter).
-        if (currentScene.Type == SceneType.Battle && current.ChapterId > 3)
+        // Tutorial & Story chapters (Ch0..Ch4) allow idempotent client completion alongside server battle-complete.
+        if (currentScene.Type == SceneType.Battle && current.ChapterId > 4)
             return BadRequest("Battle scenes are completed by the server, not the client.");
 
         var advanceResult = await _storyService.CompleteAndAdvanceAsync(playerId, currentScene);

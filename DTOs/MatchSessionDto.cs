@@ -36,7 +36,14 @@ public record MatchInfoDto(
 public record AfterMatchPlayerDataDto(
     string PlayerId,
     int UnitsAlive,
-    int TotalUnits
+    int TotalUnits,
+    int UnitsDefeated = 0,
+    List<GameInventoryApi.Models.LoadoutUnitData>? Loadout = null,
+    int DamageDealt = 0,
+    int DamageTaken = 0,
+    int HealingDone = 0,
+    int Timeouts = 0,
+    List<GameInventoryApi.Models.UnitStatsData>? Units = null
 );
 
 public record MatchResultDataDto(

@@ -148,7 +148,8 @@ public class MatchController : ControllerBase
                     history.Result.DurationSeconds,
                     history.Result.TotalInstants,
                     [..history.Result.AfterMatchTeamData
-                        .Select(p => new AfterMatchPlayerDataDto(p.PlayerId, p.UnitsAlive, p.TotalUnits))],
+                        .Select(p => new AfterMatchPlayerDataDto(p.PlayerId, p.UnitsAlive, p.TotalUnits, p.UnitsDefeated, p.Loadout,
+                            p.DamageDealt, p.DamageTaken, p.HealingDone, p.Timeouts, p.Units))],
                     history.Result.IsForfeit,
                     history.Result.ForfeitPlayerId)
                 : null,

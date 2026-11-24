@@ -676,12 +676,53 @@ public class PlayerController : ControllerBase
     // PUT /api/player/{playerId}/story-progress - Admin only
     [HttpPut("{playerId}/story-progress")]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> UpdateStoryProgress(string playerId, [FromBody] UpdatePlayerStoryProgressDto dto)
+    public async Task<IActionResult> UpdateStoryProgress(
+        string playerId,
+        [FromBody] UpdatePlayerStoryProgressDto dto,
+        [FromServices] IChapterConfigService chapterConfigService)
     {
         var (user, profile, resolvedPlayerId) = await ResolveUserAndProfileAsync(playerId);
         if (user == null && profile == null)
         {
             return NotFound(new { message = $"Player '{playerId}' not found." });
+        }
+
+        if (dto.ChapterId < 0)
+        {
+            return BadRequest(new { message = "ChapterId cannot be negative." });
+        }
+
+        var chapterCfg = await chapterConfigService.GetByChapterIdAsync(dto.ChapterId);
+        if (chapterCfg == null)
+        {
+            return BadRequest(new { message = $"Chapter {dto.ChapterId} configuration does not exist." });
+        }
+
+        var orderedScenes = (chapterCfg.Scenes ?? [])
+            .OrderBy(s => s.SceneId)
+            .ToList();
+
+        int targetChapterId = dto.ChapterId;
+        int targetSceneId = dto.SceneId;
+        bool targetIsCompleted = dto.IsCompleted;
+        bool targetIsChapterCompleted = dto.IsChapterCompleted;
+
+        if (orderedScenes.Count > 0)
+        {
+            if (targetIsChapterCompleted)
+            {
+                // Marking an entire chapter completed always aligns to the chapter's final scene
+                targetSceneId = orderedScenes.Last().SceneId;
+                targetIsCompleted = true;
+            }
+            else if (!orderedScenes.Any(s => s.SceneId == targetSceneId))
+            {
+                string validScenes = string.Join(", ", orderedScenes.Select(s => s.SceneId));
+                return BadRequest(new
+                {
+                    message = $"Scene {targetSceneId} does not exist in Chapter {targetChapterId}. Valid scenes: [{validScenes}]."
+                });
+            }
         }
 
         var existing = await _storyRepository.GetAllByFilterAsync(s => s.PlayerId == resolvedPlayerId);
@@ -699,12 +740,12 @@ public class PlayerController : ControllerBase
                 await _storyRepository.DeleteAsync(stale.Id);
             }
 
-            current.ChapterId = Math.Max(0, dto.ChapterId);
-            current.SceneId = Math.Max(0, dto.SceneId);
-            current.IsCompleted = dto.IsCompleted;
-            current.IsChapterCompleted = dto.IsChapterCompleted;
+            current.ChapterId = targetChapterId;
+            current.SceneId = targetSceneId;
+            current.IsCompleted = targetIsCompleted;
+            current.IsChapterCompleted = targetIsChapterCompleted;
             current.UpdatedAt = now;
-            current.CompletedAt = dto.IsChapterCompleted ? now : null;
+            current.CompletedAt = targetIsChapterCompleted ? now : null;
             await _storyRepository.UpdateAsync(current.Id, current);
         }
         else
@@ -712,17 +753,24 @@ public class PlayerController : ControllerBase
             await _storyRepository.CreateAsync(new StoryProgress
             {
                 PlayerId = resolvedPlayerId,
-                ChapterId = Math.Max(0, dto.ChapterId),
-                SceneId = Math.Max(0, dto.SceneId),
-                IsCompleted = dto.IsCompleted,
-                IsChapterCompleted = dto.IsChapterCompleted,
+                ChapterId = targetChapterId,
+                SceneId = targetSceneId,
+                IsCompleted = targetIsCompleted,
+                IsChapterCompleted = targetIsChapterCompleted,
                 StartedAt = now,
                 UpdatedAt = now,
-                CompletedAt = dto.IsChapterCompleted ? now : null
+                CompletedAt = targetIsChapterCompleted ? now : null
             });
         }
 
-        return Ok(new { message = $"Updated story checkpoint for {resolvedPlayerId} to C{dto.ChapterId} S{dto.SceneId}." });
+        return Ok(new
+        {
+            message = $"Updated story checkpoint for {resolvedPlayerId} to C{targetChapterId} S{targetSceneId}.",
+            chapterId = targetChapterId,
+            sceneId = targetSceneId,
+            isCompleted = targetIsCompleted,
+            isChapterCompleted = targetIsChapterCompleted
+        });
     }
 
     private async Task<(User? User, PlayerProfile? Profile, string ResolvedPlayerId)> ResolveUserAndProfileAsync(string playerId)

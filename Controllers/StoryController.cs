@@ -1,4 +1,5 @@
 using GameInventoryApi.Models;
+using GameInventoryApi.Repositories;
 using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -455,26 +456,116 @@ public class StoryController : ControllerBase
     }
 
     // -------------------------------------------------------
-    // GET /api/story/admin/player/{playerId} — inspect a player's story checkpoints
+    // GET /api/story/admin/player/{playerId} — inspect a player's latest unlocked story checkpoint
     // -------------------------------------------------------
     [HttpGet("admin/player/{playerId}")]
     [Authorize(Roles = "Admin,Moderator,Technical Support,Support")]
-    public async Task<ActionResult<List<AdminStoryProgressDto>>> GetPlayerStoryProgress(string playerId)
+    public async Task<ActionResult<List<AdminStoryProgressDto>>> GetPlayerStoryProgress(
+        string playerId,
+        [FromServices] IMongoRepository<StoryProgress> storyRepository)
     {
-        var all = await _storyService.GetAllAsync(playerId.Trim());
-        return Ok(all
-            .OrderBy(p => p.ChapterId)
-            .Select(p => new AdminStoryProgressDto(
-                p.ChapterId,
-                p.SceneId,
-                p.IsCompleted,
-                p.IsChapterCompleted,
-                p.StartedAt,
-                p.UpdatedAt,
-                p.CompletedAt))
-            .ToList());
+        string cleanId = playerId.Trim();
+        var records = await storyRepository.GetAllByFilterAsync(p => p.PlayerId == cleanId);
+        var latest = records
+            .OrderByDescending(p => p.ChapterId)
+            .ThenByDescending(p => p.SceneId)
+            .FirstOrDefault();
+
+        if (latest == null)
+            return Ok(new List<AdminStoryProgressDto>());
+
+        return Ok(new List<AdminStoryProgressDto>
+        {
+            new(
+                latest.ChapterId,
+                latest.SceneId,
+                latest.IsCompleted,
+                latest.IsChapterCompleted,
+                latest.StartedAt,
+                latest.UpdatedAt,
+                latest.CompletedAt)
+        });
+    }
+
+    // -------------------------------------------------------
+    // GET /api/story/admin/summary — server-wide completion overview per Chapter & Scene
+    // -------------------------------------------------------
+    [HttpGet("admin/summary")]
+    [Authorize(Roles = "Admin,Moderator,Technical Support,Support")]
+    public async Task<ActionResult<List<AdminChapterSummaryDto>>> GetStoryCompletionSummary(
+        [FromServices] IMongoRepository<StoryProgress> storyRepository)
+    {
+        var allProgress = await storyRepository.GetAllAsync();
+        // Deduplicate by PlayerId taking furthest progress
+        var latestByPlayer = allProgress
+            .Where(p => !string.IsNullOrWhiteSpace(p.PlayerId))
+            .GroupBy(p => p.PlayerId)
+            .Select(g => g.OrderByDescending(x => x.ChapterId).ThenByDescending(x => x.SceneId).First())
+            .ToList();
+
+        var chapters = (await _chapterConfigService.GetAllAsync())
+            .OrderBy(c => c.ChapterId)
+            .ToList();
+
+        var summary = new List<AdminChapterSummaryDto>();
+        foreach (var ch in chapters)
+        {
+            int clearedChapter = latestByPlayer.Count(p =>
+                p.ChapterId > ch.ChapterId || (p.ChapterId == ch.ChapterId && p.IsChapterCompleted));
+            int inProgressChapter = latestByPlayer.Count(p =>
+                p.ChapterId == ch.ChapterId && !p.IsChapterCompleted);
+
+            var sceneSummaries = (ch.Scenes ?? [])
+                .OrderBy(s => s.SceneId)
+                .Select(s =>
+                {
+                    int clearedScene = latestByPlayer.Count(p =>
+                        p.ChapterId > ch.ChapterId ||
+                        (p.ChapterId == ch.ChapterId && p.IsChapterCompleted) ||
+                        (p.ChapterId == ch.ChapterId && (p.SceneId > s.SceneId || (p.SceneId == s.SceneId && p.IsCompleted))));
+
+                    int atScene = latestByPlayer.Count(p =>
+                        p.ChapterId == ch.ChapterId &&
+                        !p.IsChapterCompleted &&
+                        p.SceneId == s.SceneId &&
+                        !p.IsCompleted);
+
+                    return new AdminSceneSummaryDto(
+                        s.SceneId,
+                        s.Type.ToString(),
+                        s.Description,
+                        clearedScene,
+                        atScene);
+                })
+                .ToList();
+
+            summary.Add(new AdminChapterSummaryDto(
+                ch.ChapterId,
+                ch.Title,
+                clearedChapter,
+                inProgressChapter,
+                sceneSummaries));
+        }
+
+        return Ok(summary);
     }
 }
+
+public record AdminSceneSummaryDto(
+    int SceneId,
+    string Type,
+    string Description,
+    int PlayersCleared,
+    int PlayersInProgress
+);
+
+public record AdminChapterSummaryDto(
+    int ChapterId,
+    string Title,
+    int PlayersClearedChapter,
+    int PlayersInProgressChapter,
+    List<AdminSceneSummaryDto> Scenes
+);
 
 public record AdminStoryProgressDto(
     int ChapterId,

@@ -169,15 +169,19 @@ public class MatchController : ControllerBase
             var list = new List<MatchSessionDto>();
             if (activeMatches != null)
             {
-                list.AddRange(activeMatches.Select(m => new MatchSessionDto(
-                    m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
-                )));
+                list.AddRange(activeMatches
+                    .Where(m => !string.Equals(m.Mode, "story", StringComparison.OrdinalIgnoreCase))
+                    .Select(m => new MatchSessionDto(
+                        m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
+                    )));
             }
             if (historyMatches != null)
             {
-                list.AddRange(historyMatches.Select(m => new MatchSessionDto(
-                    m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
-                )));
+                list.AddRange(historyMatches
+                    .Where(m => !string.Equals(m.Mode, "story", StringComparison.OrdinalIgnoreCase))
+                    .Select(m => new MatchSessionDto(
+                        m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
+                    )));
             }
             return Ok(list);
         }
@@ -186,9 +190,11 @@ public class MatchController : ControllerBase
         if (playerId == null) return Unauthorized();
 
         var matches = await _historyService.GetByPlayerIdAsync(playerId);
-        return Ok(matches.Select(m => new MatchSessionDto(
-            m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
-        )).ToList());
+        return Ok(matches
+            .Where(m => !string.Equals(m.Mode, "story", StringComparison.OrdinalIgnoreCase))
+            .Select(m => new MatchSessionDto(
+                m.MatchId, m.Player1Id, m.Player2Id, m.ServerIp, m.ServerPort, m.Status, m.Mode
+            )).ToList());
     }
 
     [HttpGet("log-files")]
@@ -402,16 +408,24 @@ public class MatchController : ControllerBase
                 }
             }
 
-            var history = await _historyService.ArchiveAsync(match);
-
-            // Log quest/reward actions in pvp and ranked modes
-            if ((match.Mode == "pvp" || match.Mode == "ranked") && player1Id != null && facts1 != null && facts2 != null)
+            if (!string.Equals(match.Mode, "story", StringComparison.OrdinalIgnoreCase))
             {
-                await _actionService.LogActionAsync(player1Id, "MatchResult", history.Id, facts1);
-                await _actionService.LogActionAsync(player2Id!, "MatchResult", history.Id, facts2);
+                var history = await _historyService.ArchiveAsync(match);
+
+                // Log quest/reward actions in pvp and ranked modes
+                if ((match.Mode == "pvp" || match.Mode == "ranked") && player1Id != null && facts1 != null && facts2 != null)
+                {
+                    await _actionService.LogActionAsync(player1Id, "MatchResult", history.Id, facts1);
+                    await _actionService.LogActionAsync(player2Id!, "MatchResult", history.Id, facts2);
+                }
+                Console.WriteLine($"[Match] Result recorded: match={matchId} mode={match.Mode} status={dto.Status} " +
+                                  $"winner={dto.Result?.WinnerId ?? "-"} history={history.Id}");
             }
-            Console.WriteLine($"[Match] Result recorded: match={matchId} mode={match.Mode} status={dto.Status} " +
-                              $"winner={dto.Result?.WinnerId ?? "-"} history={history.Id}");
+            else
+            {
+                Console.WriteLine($"[Match] Story match finished (skipped MatchHistory archive): match={matchId} status={dto.Status} " +
+                                  $"winner={dto.Result?.WinnerId ?? "-"}");
+            }
             await _matchService.TerminateMatchAsync(match, $"server reported {dto.Status}");
         }
         catch (Exception ex)

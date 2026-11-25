@@ -67,6 +67,9 @@ builder.Services.AddScoped<IMongoRepository<MatchUnitTelemetry>>(sp =>
 builder.Services.AddScoped<IMongoRepository<BalanceAiSuggestion>>(sp =>
     new MongoRepository<BalanceAiSuggestion>(sp.GetRequiredService<IMongoDatabase>(), "BalanceAiSuggestions"));
 
+builder.Services.AddScoped<IMongoRepository<GameVersionConfig>>(sp =>
+    new MongoRepository<GameVersionConfig>(sp.GetRequiredService<IMongoDatabase>(), "GameVersionConfigs"));
+
 builder.Services.AddScoped<IMongoRepository<MatchQueueEntry>>(sp =>
     new MongoRepository<MatchQueueEntry>(sp.GetRequiredService<IMongoDatabase>(), "MatchQueue"));
 
@@ -180,6 +183,7 @@ builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.Configure<LlmSettings>(builder.Configuration.GetSection("LlmSettings"));
 builder.Services.AddHttpClient<ILlmService, LlmService>();
 builder.Services.AddScoped<IBalanceAnalyticsService, BalanceAnalyticsService>();
+builder.Services.AddScoped<IGameVersionService, GameVersionService>();
 
 var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

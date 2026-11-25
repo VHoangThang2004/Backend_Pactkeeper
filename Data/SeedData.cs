@@ -15,6 +15,27 @@ public static class SeedData
         await SeedGachaBannersAsync(database);
         await SeedChapterConfigsAsync(database);
         await SeedRewardRulesAsync(database);
+        await SeedGameVersionConfigAsync(database);
+    }
+
+    private static async Task SeedGameVersionConfigAsync(IMongoDatabase database)
+    {
+        var col = database.GetCollection<GameVersionConfig>("GameVersionConfigs");
+        if (await col.CountDocumentsAsync(_ => true) > 0)
+        {
+            return;
+        }
+
+        await col.InsertOneAsync(new GameVersionConfig
+        {
+            LatestVersion = "1.0.0",
+            MinSupportedVersion = "1.0.0",
+            DownloadUrl = "http://srpg-backend.duckdns.org:5276/downloads/SRPG_Client.zip",
+            PatchNotes = "Initial release.",
+            UpdatedAt = DateTime.UtcNow,
+            UpdatedBy = "Seed"
+        });
+        Console.WriteLine("[Seed] GameVersionConfig initialized.");
     }
 
     private static async Task SeedChapterConfigsAsync(IMongoDatabase database)

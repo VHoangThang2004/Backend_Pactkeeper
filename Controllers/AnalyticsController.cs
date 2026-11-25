@@ -103,7 +103,7 @@ public class AnalyticsController : ControllerBase
     /// </summary>
     [HttpGet("self-test")]
     [AllowAnonymous]
-    public async Task<IActionResult> SelfTest()
+    public async Task<IActionResult> SelfTest([FromServices] IGameVersionService versionService)
     {
         var logs = new List<string>();
         try
@@ -163,6 +163,23 @@ public class AnalyticsController : ControllerBase
             var sug2 = await _analyticsService.GetOrGenerateAiSuggestionAsync(req, "test_admin", "TestAdmin");
             if (sug2.Id != sug1.Id) throw new Exception("Token-saving cache failed! Created new suggestion instead of returning existing one.");
             logs.Add("Token-saving cache returned existing suggestion record (PASS)");
+
+            // 4. Verify Game Version retrieval and update
+            var initialVer = await versionService.GetVersionConfigAsync();
+            logs.Add($"Initial GameVersion retrieved: {initialVer.LatestVersion} (PASS)");
+
+            var updatedVer = await versionService.UpdateVersionConfigAsync(new UpdateGameVersionDto
+            {
+                LatestVersion = "1.0.1-test",
+                MinSupportedVersion = "1.0.0",
+                DownloadUrl = "https://example.com/client.zip",
+                PatchNotes = "Self-test patch notes."
+            }, "SelfTestAdmin");
+
+            if (updatedVer.LatestVersion != "1.0.1-test") throw new Exception("Version update mismatch");
+            var fetchedVer = await versionService.GetVersionConfigAsync();
+            if (fetchedVer.LatestVersion != "1.0.1-test") throw new Exception("Fetched updated version mismatch");
+            logs.Add($"GameVersion updated and verified: {fetchedVer.LatestVersion} (PASS)");
 
             return Ok(new { success = true, logs });
         }

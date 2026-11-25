@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -19,6 +21,28 @@ public class AuthController : ControllerBase
     private readonly ISteamAuthService _steamAuthService;
     private readonly IGoogleAuthService _googleAuthService;
     private readonly IConfiguration _configuration;
+
+    private static readonly ConcurrentDictionary<string, (string Token, DateTime ExpiresAtUtc)> _pendingLoginCodes = new();
+
+    public record ExchangeCodeRequestDto(string Code);
+
+    private static string IssueOneTimeLoginCode(string token)
+    {
+        var now = DateTime.UtcNow;
+        foreach (var kvp in _pendingLoginCodes)
+        {
+            if (now > kvp.Value.ExpiresAtUtc)
+                _pendingLoginCodes.TryRemove(kvp.Key, out _);
+        }
+
+        var code = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
+        _pendingLoginCodes[code] = (token, now.AddSeconds(60));
+        return code;
+    }
 
     public AuthController(
         IAuthService authService,
@@ -196,8 +220,9 @@ public class AuthController : ControllerBase
             string finalRedirectUrl;
             if (state == "pc")
             {
+                var oneTimeCode = IssueOneTimeLoginCode(authResponse.Token);
                 finalRedirectUrl = $"http://localhost:5000/callback" +
-                                   $"?token={Uri.EscapeDataString(authResponse.Token)}" +
+                                   $"?code={Uri.EscapeDataString(oneTimeCode)}" +
                                    $"&username={Uri.EscapeDataString(authResponse.Username)}" +
                                    $"&playerId={Uri.EscapeDataString(authResponse.PlayerId)}" +
                                    $"&role={Uri.EscapeDataString(authResponse.Role)}";
@@ -218,5 +243,19 @@ public class AuthController : ControllerBase
             Console.WriteLine($"[GoogleCallback] Exception: {ex.Message}");
             return StatusCode(500, $"Lỗi xử lý callback Google: {ex.Message}");
         }
+    }
+
+    // POST /api/auth/exchange-code
+    [HttpPost("exchange-code")]
+    [AllowAnonymous]
+    public IActionResult ExchangeCode([FromBody] ExchangeCodeRequestDto? dto)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Code))
+            return Unauthorized();
+
+        if (!_pendingLoginCodes.TryRemove(dto.Code, out var entry) || DateTime.UtcNow > entry.ExpiresAtUtc)
+            return Unauthorized();
+
+        return Ok(new { token = entry.Token });
     }
 }

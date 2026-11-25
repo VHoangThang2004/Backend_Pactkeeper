@@ -110,9 +110,34 @@ public class StoryController : ControllerBase
         if (currentScene == null)
             return NotFound("Scene config not found.");
 
-        // Tutorial & Story chapters (Ch0..Ch4) allow idempotent client completion alongside server battle-complete.
-        if (currentScene.Type == SceneType.Battle && current.ChapterId > 4)
+        // Server-Authoritative Battle Completion:
+        // Only Chapter 0 scripted tutorial steps (where PlotSequencer exits via CompleteAndExit without team elimination)
+        // allow client-driven battle completion. All Story Battle scenes from Chapter 1 onwards (C1_S1..C4_S1+)
+        // must be completed exclusively by the Headless Server via POST /api/story/progress/battle-complete.
+        if (currentScene.Type == SceneType.Battle && current.ChapterId >= 1)
+        {
+            // Brief grace poll in case the client's Continue click arrived while the server's battle-complete
+            // request was still committing to MongoDB.
+            for (int poll = 0; poll < 5; poll++)
+            {
+                await Task.Delay(300);
+                current = await _storyService.GetCurrentAsync(playerId);
+                bool advancedOrDone =
+                    current.IsCompleted ||
+                    current.IsChapterCompleted ||
+                    (targetChapterId.HasValue && targetSceneId.HasValue &&
+                     (current.ChapterId != targetChapterId.Value || current.SceneId != targetSceneId.Value));
+
+                if (advancedOrDone)
+                {
+                    var latestScene = await _chapterConfigService.GetSceneAsync(current.ChapterId, current.SceneId);
+                    await TerminateStoryMatchesAsync(playerId, $"confirmed server battle-complete for C{targetChapterId}_S{targetSceneId}");
+                    return Ok(ToDto(new AdvanceResult(current, latestScene, false)));
+                }
+            }
+
             return BadRequest("Battle scenes are completed by the server, not the client.");
+        }
 
         var advanceResult = await _storyService.CompleteAndAdvanceAsync(playerId, currentScene);
 

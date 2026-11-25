@@ -614,13 +614,57 @@ public static class SeedData
     private static async Task SeedRewardRulesAsync(IMongoDatabase database)
     {
         var col = database.GetCollection<RewardRule>("RewardRules");
+
+        var storyChapterRewards = new (string ChapterId, int Gems)[]
+        {
+            ("0", 200),  // Chapter 0 — The Covenant of Time (Tutorial clear)
+            ("1", 300),  // Chapter 1 — The Iron Wall (First-Clear)
+            ("2", 400),  // Chapter 2 — Shadow & Precision (First-Clear)
+            ("3", 500),  // Chapter 3 — The Crucible of Time (First-Clear)
+            ("4", 1500), // Chapter 4 — Fall of the Unbound Boss Finale (First-Clear: 10x Gacha Pull)
+        };
+
         if (await col.CountDocumentsAsync(_ => true) > 0)
         {
-            Console.WriteLine("[Seed] RewardRules already seeded, skipping.");
+            // Ensure First-Clear StoryProgress reward rules for all Chapters (0..4) exist even on already-seeded DBs
+            var existingStoryRules = await col
+                .Find(r => r.ActionType == "StoryProgress")
+                .ToListAsync();
+
+            var missingRules = new List<RewardRule>();
+            foreach (var (chId, gems) in storyChapterRewards)
+            {
+                bool exists = existingStoryRules.Any(r =>
+                    r.Conditions != null &&
+                    r.Conditions.Any(c => c.Field == "chapterId" && c.Op == "==" && c.Value == chId));
+
+                if (!exists)
+                {
+                    missingRules.Add(new RewardRule
+                    {
+                        ActionType = "StoryProgress",
+                        Conditions = [ new() { Field = "chapterId", Op = "==", Value = chId } ],
+                        AccumulateField = null,
+                        TargetCount = 1,
+                        Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = gems },
+                        IsActive = true,
+                    });
+                }
+            }
+
+            if (missingRules.Count > 0)
+            {
+                await col.InsertManyAsync(missingRules);
+                Console.WriteLine($"[Seed] Added {missingRules.Count} missing StoryProgress First-Clear RewardRule(s).");
+            }
+            else
+            {
+                Console.WriteLine("[Seed] RewardRules already seeded, skipping.");
+            }
             return;
         }
 
-        await col.InsertManyAsync(new[]
+        var initialRules = new List<RewardRule>
         {
             // MatchResult - simple bool condition, +1 per qualifying action
             new RewardRule
@@ -692,19 +736,22 @@ public static class SeedData
                 Reward = new() { Type = RewardType.Trinket, DefinitionId = 5, Amount = 1 }, // Steel Heels
                 IsActive = true,
             },
+        };
 
-            // StoryProgress - chapter-complete condition
-            new RewardRule
+        foreach (var (chId, gems) in storyChapterRewards)
+        {
+            initialRules.Add(new RewardRule
             {
                 ActionType = "StoryProgress",
-                Conditions = [ new() { Field = "chapterId", Op = "==", Value = "0" } ],
+                Conditions = [ new() { Field = "chapterId", Op = "==", Value = chId } ],
                 AccumulateField = null,
                 TargetCount = 1,
-                Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = 200 },
+                Reward = new() { Type = RewardType.Gems, DefinitionId = 0, Amount = gems },
                 IsActive = true,
-            },
-        });
+            });
+        }
 
+        await col.InsertManyAsync(initialRules);
         Console.WriteLine("[Seed] RewardRules seeded.");
     }
 }

@@ -22,6 +22,7 @@ public class AuthController : ControllerBase
     private readonly IGoogleAuthService _googleAuthService;
     private readonly IConfiguration _configuration;
 
+    private static readonly HttpClient _sharedHttpClient = new();
     private static readonly ConcurrentDictionary<string, (AuthResponseDto Response, DateTime ExpiresAtUtc)> _pendingLoginCodes = new();
 
     public record ExchangeCodeRequestDto(string Code);
@@ -201,7 +202,6 @@ public class AuthController : ControllerBase
 
         try
         {
-            using var client = new HttpClient();
             var clientId = _configuration["GoogleSettings:ClientId"];
             var clientSecret = _configuration["GoogleSettings:ClientSecret"];
             var backendPublicUrl = _configuration["ServerConfig:BackendPublicUrl"] ?? "http://localhost:5276";
@@ -216,13 +216,15 @@ public class AuthController : ControllerBase
                 { "grant_type", "authorization_code" }
             };
 
-            var content = new FormUrlEncodedContent(values);
-            var response = await client.PostAsync("https://oauth2.googleapis.com/token", content);
+            using var content = new FormUrlEncodedContent(values);
+            using var response = await _sharedHttpClient.PostAsync("https://oauth2.googleapis.com/token", content);
 
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
                 Console.WriteLine($"[GoogleCallback] Error exchanging code: {errorContent}");
+                if (resolvedState == "pc")
+                    return Redirect("http://localhost:5000/callback?error=token_exchange_failed");
                 return BadRequest("Không thể trao đổi mã xác thực với Google.");
             }
 
@@ -231,18 +233,24 @@ public class AuthController : ControllerBase
 
             if (!jsonDoc.RootElement.TryGetProperty("id_token", out var idTokenProp))
             {
+                if (resolvedState == "pc")
+                    return Redirect("http://localhost:5000/callback?error=missing_id_token");
                 return BadRequest("Không tìm thấy id_token trong phản hồi từ Google.");
             }
 
             var idToken = idTokenProp.GetString();
             if (string.IsNullOrEmpty(idToken))
             {
+                if (resolvedState == "pc")
+                    return Redirect("http://localhost:5000/callback?error=empty_id_token");
                 return BadRequest("id_token từ Google trống.");
             }
 
             var authResponse = await _googleAuthService.LoginWithGoogleAsync(new GoogleLoginDto(idToken));
             if (authResponse == null)
             {
+                if (resolvedState == "pc")
+                    return Redirect("http://localhost:5000/callback?error=account_auth_failed");
                 return BadRequest("Xác thực thông tin tài khoản Google thất bại.");
             }
 
@@ -265,8 +273,10 @@ public class AuthController : ControllerBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[GoogleCallback] Exception: {ex.Message}");
-            return StatusCode(500, $"Lỗi xử lý callback Google: {ex.Message}");
+            Console.WriteLine($"[GoogleCallback] Exception: {ex}");
+            if (resolvedState == "pc")
+                return Redirect("http://localhost:5000/callback?error=server_error");
+            return StatusCode(500, "Đã xảy ra lỗi trong quá trình xác thực Google.");
         }
     }
 

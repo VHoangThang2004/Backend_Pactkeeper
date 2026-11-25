@@ -22,11 +22,11 @@ public class AuthController : ControllerBase
     private readonly IGoogleAuthService _googleAuthService;
     private readonly IConfiguration _configuration;
 
-    private static readonly ConcurrentDictionary<string, (string Token, DateTime ExpiresAtUtc)> _pendingLoginCodes = new();
+    private static readonly ConcurrentDictionary<string, (AuthResponseDto Response, DateTime ExpiresAtUtc)> _pendingLoginCodes = new();
 
     public record ExchangeCodeRequestDto(string Code);
 
-    private static string IssueOneTimeLoginCode(string token)
+    private static string IssueOneTimeLoginCode(AuthResponseDto authResponse)
     {
         var now = DateTime.UtcNow;
         foreach (var kvp in _pendingLoginCodes)
@@ -40,7 +40,7 @@ public class AuthController : ControllerBase
             .Replace('+', '-')
             .Replace('/', '_');
 
-        _pendingLoginCodes[code] = (token, now.AddSeconds(60));
+        _pendingLoginCodes[code] = (authResponse, now.AddSeconds(60));
         return code;
     }
 
@@ -154,11 +154,49 @@ public class AuthController : ControllerBase
 
     // GET /api/auth/google-callback
     [HttpGet("google-callback")]
-    public async Task<IActionResult> GoogleCallback([FromQuery] string code)
+    public async Task<IActionResult> GoogleCallback(
+        [FromQuery] string? code = null,
+        [FromQuery] string? error = null,
+        [FromQuery] string? state = null)
     {
-        if (string.IsNullOrEmpty(code))
+        var resolvedState = !string.IsNullOrEmpty(state) ? state : Request.Query["state"].ToString();
+
+        if (!string.IsNullOrEmpty(error) || string.IsNullOrEmpty(code))
         {
-            return BadRequest("Mã xác thực Google (code) không hợp lệ.");
+            if (resolvedState == "pc")
+            {
+                return Redirect($"http://localhost:5000/callback?error={Uri.EscapeDataString(error ?? "cancelled")}");
+            }
+
+            const string cancelledHtml = @"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+  <meta charset=""UTF-8"" />
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"" />
+  <title>Pactkeeper — Login Cancelled</title>
+  <style>
+    body {
+      margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle at top, #2B1D24 0%, #140D10 70%);
+      color: #F2E4C8; font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    .card {
+      background: #1E161C; border: 2px solid #8C5A3C; border-radius: 10px;
+      padding: 36px 44px; text-align: center; max-width: 400px;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+    }
+    h1 { margin: 0 0 8px; font-size: 20px; letter-spacing: 2px; color: #E8C678; text-transform: uppercase; }
+    p { margin: 0; font-size: 14px; color: #C9B9A6; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class=""card"">
+    <h1>Login Cancelled</h1>
+    <p>Google authentication was cancelled.<br/>You may safely close this tab and return to Pactkeeper.</p>
+  </div>
+</body>
+</html>";
+            return Content(cancelledHtml, "text/html; charset=utf-8");
         }
 
         try
@@ -208,24 +246,11 @@ public class AuthController : ControllerBase
                 return BadRequest("Xác thực thông tin tài khoản Google thất bại.");
             }
 
-            // Redirect về app qua Deep Link Custom URL Scheme
-            var redirectUrl = $"unnamedsrpg://login-success" +
-                              $"?token={Uri.EscapeDataString(authResponse.Token)}" +
-                              $"&username={Uri.EscapeDataString(authResponse.Username)}" +
-                              $"&playerId={Uri.EscapeDataString(authResponse.PlayerId)}" +
-                              $"&role={Uri.EscapeDataString(authResponse.Role)}";
-
-
-            var state = Request.Query["state"].ToString();
             string finalRedirectUrl;
-            if (state == "pc")
+            if (resolvedState == "pc")
             {
-                var oneTimeCode = IssueOneTimeLoginCode(authResponse.Token);
-                finalRedirectUrl = $"http://localhost:5000/callback" +
-                                   $"?code={Uri.EscapeDataString(oneTimeCode)}" +
-                                   $"&username={Uri.EscapeDataString(authResponse.Username)}" +
-                                   $"&playerId={Uri.EscapeDataString(authResponse.PlayerId)}" +
-                                   $"&role={Uri.EscapeDataString(authResponse.Role)}";
+                var oneTimeCode = IssueOneTimeLoginCode(authResponse);
+                finalRedirectUrl = $"http://localhost:5000/callback?code={Uri.EscapeDataString(oneTimeCode)}";
             }
             else
             {
@@ -235,7 +260,7 @@ public class AuthController : ControllerBase
                                    $"&playerId={Uri.EscapeDataString(authResponse.PlayerId)}" +
                                    $"&role={Uri.EscapeDataString(authResponse.Role)}";
             }
-            Console.WriteLine($"[GoogleCallback] Success! Redirecting for user: {authResponse.Username} platform={state}");
+            Console.WriteLine($"[GoogleCallback] Success! Redirecting for user: {authResponse.Username} platform={resolvedState}");
             return Redirect(finalRedirectUrl);
         }
         catch (Exception ex)
@@ -248,7 +273,7 @@ public class AuthController : ControllerBase
     // POST /api/auth/exchange-code
     [HttpPost("exchange-code")]
     [AllowAnonymous]
-    public IActionResult ExchangeCode([FromBody] ExchangeCodeRequestDto? dto)
+    public ActionResult<AuthResponseDto> ExchangeCode([FromBody] ExchangeCodeRequestDto? dto)
     {
         if (dto == null || string.IsNullOrWhiteSpace(dto.Code))
             return Unauthorized();
@@ -256,6 +281,6 @@ public class AuthController : ControllerBase
         if (!_pendingLoginCodes.TryRemove(dto.Code, out var entry) || DateTime.UtcNow > entry.ExpiresAtUtc)
             return Unauthorized();
 
-        return Ok(new { token = entry.Token });
+        return Ok(entry.Response);
     }
 }

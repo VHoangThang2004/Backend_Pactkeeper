@@ -723,6 +723,11 @@ public class PlayerController : ControllerBase
                     message = $"Scene {targetSceneId} does not exist in Chapter {targetChapterId}. Valid scenes: [{validScenes}]."
                 });
             }
+            else if (targetIsCompleted && targetSceneId == orderedScenes.Last().SceneId)
+            {
+                // Completing the final scene of a chapter also marks the chapter completed
+                targetIsChapterCompleted = true;
+            }
         }
 
         var existing = await _storyRepository.GetAllByFilterAsync(s => s.PlayerId == resolvedPlayerId);

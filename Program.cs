@@ -61,6 +61,12 @@ new MongoRepository<MatchSession>(sp.GetRequiredService<IMongoDatabase>(), "Matc
 builder.Services.AddScoped<IMongoRepository<MatchHistory>>(sp =>
     new MongoRepository<MatchHistory>(sp.GetRequiredService<IMongoDatabase>(), "MatchHistory"));
 
+builder.Services.AddScoped<IMongoRepository<MatchUnitTelemetry>>(sp =>
+    new MongoRepository<MatchUnitTelemetry>(sp.GetRequiredService<IMongoDatabase>(), "MatchUnitTelemetry"));
+
+builder.Services.AddScoped<IMongoRepository<BalanceAiSuggestion>>(sp =>
+    new MongoRepository<BalanceAiSuggestion>(sp.GetRequiredService<IMongoDatabase>(), "BalanceAiSuggestions"));
+
 builder.Services.AddScoped<IMongoRepository<MatchQueueEntry>>(sp =>
     new MongoRepository<MatchQueueEntry>(sp.GetRequiredService<IMongoDatabase>(), "MatchQueue"));
 
@@ -171,6 +177,9 @@ builder.Services.Configure<SteamSettings>(builder.Configuration.GetSection("Stea
 builder.Services.AddHttpClient<ISteamAuthService, SteamAuthService>();
 builder.Services.Configure<GoogleSettings>(builder.Configuration.GetSection("GoogleSettings"));
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
+builder.Services.Configure<LlmSettings>(builder.Configuration.GetSection("LlmSettings"));
+builder.Services.AddHttpClient<ILlmService, LlmService>();
+builder.Services.AddScoped<IBalanceAnalyticsService, BalanceAnalyticsService>();
 
 var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

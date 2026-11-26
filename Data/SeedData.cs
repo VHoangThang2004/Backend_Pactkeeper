@@ -615,24 +615,23 @@ public static class SeedData
     {
         var col = database.GetCollection<RewardRule>("RewardRules");
 
-        var storyChapterRewards = new (string ChapterId, int Gems)[]
+        var storyChapterRewards = new (string ChapterId, int Gems, string Title, string Description)[]
         {
-            ("0", 200),  // Chapter 0 — The Covenant of Time (Tutorial clear)
-            ("1", 300),  // Chapter 1 — The Iron Wall (First-Clear)
-            ("2", 400),  // Chapter 2 — Shadow & Precision (First-Clear)
-            ("3", 500),  // Chapter 3 — The Crucible of Time (First-Clear)
-            ("4", 1500), // Chapter 4 — Fall of the Unbound Boss Finale (First-Clear: 10x Gacha Pull)
+            ("0", 200,  "Chapter 0 Clear: First Steps",            "Complete Chapter 0 of the story mode."),
+            ("1", 300,  "Chapter 1 Clear: The Iron Wall",          "Complete Chapter 1 of the story mode."),
+            ("2", 400,  "Chapter 2 Clear: Long Reach in the Mire", "Complete Chapter 2 of the story mode."),
+            ("3", 500,  "Chapter 3 Clear: The Forest Pact",        "Complete Chapter 3 of the story mode."),
+            ("4", 1500, "Chapter 4 Clear: Throne of the Eclipse",  "Complete Chapter 4 of the story mode."),
         };
 
         if (await col.CountDocumentsAsync(_ => true) > 0)
         {
             // Ensure First-Clear StoryProgress reward rules for all Chapters (0..4) exist even on already-seeded DBs
-            var existingStoryRules = await col
-                .Find(r => r.ActionType == "StoryProgress")
-                .ToListAsync();
+            var existingRules = await col.Find(_ => true).ToListAsync();
+            var existingStoryRules = existingRules.Where(r => r.ActionType == "StoryProgress").ToList();
 
             var missingRules = new List<RewardRule>();
-            foreach (var (chId, gems) in storyChapterRewards)
+            foreach (var (chId, gems, title, desc) in storyChapterRewards)
             {
                 bool exists = existingStoryRules.Any(r =>
                     r.Conditions != null &&
@@ -642,6 +641,8 @@ public static class SeedData
                 {
                     missingRules.Add(new RewardRule
                     {
+                        Title = title,
+                        Description = desc,
                         ActionType = "StoryProgress",
                         Conditions = [ new() { Field = "chapterId", Op = "==", Value = chId } ],
                         AccumulateField = null,
@@ -657,9 +658,40 @@ public static class SeedData
                 await col.InsertManyAsync(missingRules);
                 Console.WriteLine($"[Seed] Added {missingRules.Count} missing StoryProgress First-Clear RewardRule(s).");
             }
-            else
+
+            // Backfill Title & Description on existing rules if empty
+            foreach (var r in existingRules.Where(r => string.IsNullOrWhiteSpace(r.Title)))
             {
-                Console.WriteLine("[Seed] RewardRules already seeded, skipping.");
+                string? CondVal(string field) =>
+                    r.Conditions?.FirstOrDefault(c => string.Equals(c.Field, field, StringComparison.OrdinalIgnoreCase))?.Value;
+
+                (r.Title, r.Description) = r.ActionType switch
+                {
+                    "StoryProgress" => CondVal("chapterId") switch
+                    {
+                        "0" => ("Chapter 0 Clear: First Steps", "Complete Chapter 0 of the story mode."),
+                        "1" => ("Chapter 1 Clear: The Iron Wall", "Complete Chapter 1 of the story mode."),
+                        "2" => ("Chapter 2 Clear: Long Reach in the Mire", "Complete Chapter 2 of the story mode."),
+                        "3" => ("Chapter 3 Clear: The Forest Pact", "Complete Chapter 3 of the story mode."),
+                        "4" => ("Chapter 4 Clear: Throne of the Eclipse", "Complete Chapter 4 of the story mode."),
+                        var ch => ($"Chapter {ch} Clear", $"Complete Chapter {ch} of the story mode.")
+                    },
+                    "MatchResult" when CondVal("unitsAlive") != null =>
+                        ("Flawless Vanguard", $"Win {r.TargetCount} match with at least {CondVal("unitsAlive")} units surviving."),
+                    "MatchResult" when r.TargetCount >= 10 =>
+                        ("Grand Tactician", $"Win {r.TargetCount} matches."),
+                    "MatchResult" =>
+                        ("Tactical Victor", $"Win {r.TargetCount} matches."),
+                    "GachaPull" when CondVal("rarestTier") == "3" =>
+                        ("Chosen by Fate", "Pull a unit (Tier 3) from the gacha banner."),
+                    "GachaPull" =>
+                        ("Pact Summoner", $"Perform a total of {r.TargetCount} gacha pulls."),
+                    "Purchase" =>
+                        ("Royal Patron", $"Spend a total of {r.TargetCount} gems on top-up purchases."),
+                    _ => (r.ActionType, string.Empty)
+                };
+
+                await col.ReplaceOneAsync(x => x.Id == r.Id, r);
             }
             return;
         }
@@ -669,6 +701,8 @@ public static class SeedData
             // MatchResult - simple bool condition, +1 per qualifying action
             new RewardRule
             {
+                Title = "Tactical Victor",
+                Description = "Win 3 matches.",
                 ActionType = "MatchResult",
                 Conditions = [ new() { Field = "won", Op = "==", Value = "true" } ],
                 AccumulateField = null,
@@ -681,6 +715,8 @@ public static class SeedData
             // dedupe/compensation path in PlayerProfileService.ApplyReward if already owned)
             new RewardRule
             {
+                Title = "Flawless Vanguard",
+                Description = "Win 1 match with at least 3 units surviving.",
                 ActionType = "MatchResult",
                 Conditions =
                 [
@@ -696,6 +732,8 @@ public static class SeedData
             // MatchResult - long-run counter that grants a Unit (exercises RewardType.Unit + ClassId)
             new RewardRule
             {
+                Title = "Grand Tactician",
+                Description = "Win 10 matches.",
                 ActionType = "MatchResult",
                 Conditions = [ new() { Field = "won", Op = "==", Value = "true" } ],
                 AccumulateField = null,
@@ -707,6 +745,8 @@ public static class SeedData
             // GachaPull - accumulates the actual pull count per action instead of counting actions
             new RewardRule
             {
+                Title = "Pact Summoner",
+                Description = "Perform a total of 5 gacha pulls.",
                 ActionType = "GachaPull",
                 Conditions = [],
                 AccumulateField = "pullCount",
@@ -718,6 +758,8 @@ public static class SeedData
             // GachaPull - string condition on rarestTier
             new RewardRule
             {
+                Title = "Chosen by Fate",
+                Description = "Pull a unit (Tier 3) from the gacha banner.",
                 ActionType = "GachaPull",
                 Conditions = [ new() { Field = "rarestTier", Op = "==", Value = "3" } ],
                 AccumulateField = null,
@@ -729,6 +771,8 @@ public static class SeedData
             // Purchase - accumulates gems spent across purchases
             new RewardRule
             {
+                Title = "Royal Patron",
+                Description = "Spend a total of 1000 gems on top-up purchases.",
                 ActionType = "Purchase",
                 Conditions = [],
                 AccumulateField = "gemsAmount",
@@ -738,10 +782,12 @@ public static class SeedData
             },
         };
 
-        foreach (var (chId, gems) in storyChapterRewards)
+        foreach (var (chId, gems, title, desc) in storyChapterRewards)
         {
             initialRules.Add(new RewardRule
             {
+                Title = title,
+                Description = desc,
                 ActionType = "StoryProgress",
                 Conditions = [ new() { Field = "chapterId", Op = "==", Value = chId } ],
                 AccumulateField = null,

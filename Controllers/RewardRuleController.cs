@@ -49,6 +49,8 @@ public class RewardRuleController : ControllerBase
     {
         var rule = new RewardRule
         {
+            Title = dto.Title ?? string.Empty,
+            Description = dto.Description ?? string.Empty,
             ActionType = dto.ActionType,
             Conditions = dto.Conditions.Select(MapCondition).ToList(),
             AccumulateField = dto.AccumulateField,
@@ -68,6 +70,10 @@ public class RewardRuleController : ControllerBase
         var existing = await _service.GetByIdAsync(id);
         if (existing == null) return NotFound();
 
+        if (!string.IsNullOrWhiteSpace(dto.Title))
+            existing.Title = dto.Title;
+        if (!string.IsNullOrWhiteSpace(dto.Description))
+            existing.Description = dto.Description;
         existing.ActionType = dto.ActionType;
         existing.Conditions = dto.Conditions.Select(MapCondition).ToList();
         existing.AccumulateField = dto.AccumulateField;
@@ -122,6 +128,35 @@ public class RewardRuleController : ControllerBase
         r.AccumulateField,
         r.TargetCount,
         new RewardDto(r.Reward.Type, r.Reward.DefinitionId, r.Reward.ClassId, r.Reward.Amount),
-        r.IsActive
+        r.IsActive,
+        !string.IsNullOrWhiteSpace(r.Title) ? r.Title : BuildFallbackTitle(r),
+        r.Description ?? string.Empty
     );
+
+    private static string BuildFallbackTitle(RewardRule r)
+    {
+        string? CondVal(string field) =>
+            r.Conditions?.FirstOrDefault(c => string.Equals(c.Field, field, StringComparison.OrdinalIgnoreCase))?.Value;
+
+        return r.ActionType switch
+        {
+            "StoryProgress" => CondVal("chapterId") switch
+            {
+                "0" => "Chapter 0 Clear: First Steps",
+                "1" => "Chapter 1 Clear: The Iron Wall",
+                "2" => "Chapter 2 Clear: Long Reach in the Mire",
+                "3" => "Chapter 3 Clear: The Forest Pact",
+                "4" => "Chapter 4 Clear: Throne of the Eclipse",
+                var ch when !string.IsNullOrEmpty(ch) => $"Chapter {ch} Clear",
+                _ => "Story Milestone"
+            },
+            "MatchResult" when CondVal("unitsAlive") != null => "Flawless Vanguard",
+            "MatchResult" when r.TargetCount >= 10 => "Grand Tactician",
+            "MatchResult" => "Tactical Victor",
+            "GachaPull" when CondVal("rarestTier") == "3" => "Chosen by Fate",
+            "GachaPull" => "Pact Summoner",
+            "Purchase" => "Royal Patron",
+            _ => r.ActionType
+        };
+    }
 }

@@ -7,7 +7,9 @@ public record CreateRewardRuleDto(
     List<RewardConditionDto> Conditions,
     string? AccumulateField,
     int TargetCount,
-    RewardDto Reward
+    RewardDto Reward,
+    string? Title = null,
+    string? Description = null
 );
 
 public record UpdateRewardRuleDto(
@@ -15,7 +17,9 @@ public record UpdateRewardRuleDto(
     List<RewardConditionDto> Conditions,
     string? AccumulateField,
     int TargetCount,
-    RewardDto Reward
+    RewardDto Reward,
+    string? Title = null,
+    string? Description = null
 );
 
 public record RewardRuleDto(
@@ -25,5 +29,7 @@ public record RewardRuleDto(
     string? AccumulateField,
     int TargetCount,
     RewardDto Reward,
-    bool IsActive
+    bool IsActive,
+    string Title = "",
+    string Description = ""
 );

@@ -9,6 +9,8 @@ public class RewardRule
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = string.Empty;
 
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
     public string ActionType { get; set; } = string.Empty;
     public List<RewardCondition> Conditions { get; set; } = new();
     public string? AccumulateField { get; set; }

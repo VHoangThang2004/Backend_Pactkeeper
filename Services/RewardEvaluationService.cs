@@ -39,9 +39,10 @@ public class RewardEvaluationService(
             if (rule.AccumulateField != null && action.Facts.TryGetValue(rule.AccumulateField, out var raw))
                 delta = Convert.ToInt32(raw);
 
-            progress.CurrentCount += delta;
+            int target = Math.Max(1, rule.TargetCount);
+            progress.CurrentCount = Math.Min(progress.CurrentCount + delta, target);
 
-            if (progress.CurrentCount >= rule.TargetCount)
+            if (progress.CurrentCount >= target)
             {
                 progress.IsCompleted = true;
                 progress.CompletedAt = DateTime.UtcNow;

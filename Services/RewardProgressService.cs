@@ -82,6 +82,28 @@ public class RewardProgressService(
             }
         }
 
+        var allRules = await ruleRepository.GetAllAsync();
+        var ruleMap = allRules.ToDictionary(r => r.Id, r => r);
+
+        // Clamp any historical progress records that exceeded TargetCount (e.g. 10 / 5 -> 5 / 5)
+        foreach (var prog in progressList)
+        {
+            if (ruleMap.TryGetValue(prog.RuleId, out var matchedRule))
+            {
+                int cap = Math.Max(1, matchedRule.TargetCount);
+                if (prog.CurrentCount > cap)
+                {
+                    prog.CurrentCount = cap;
+                    if (!prog.IsCompleted)
+                    {
+                        prog.IsCompleted = true;
+                        prog.CompletedAt ??= DateTime.UtcNow;
+                    }
+                    await progressRepository.UpdateAsync(prog.Id, prog);
+                }
+            }
+        }
+
         return progressList;
     }
 

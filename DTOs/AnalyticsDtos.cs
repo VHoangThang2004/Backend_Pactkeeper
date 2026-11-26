@@ -27,6 +27,7 @@ public class BalanceMetricItemDto
 public class BalanceAnalyticsResponseDto
 {
     public string? PatchVersion { get; set; }
+    public List<string> AvailablePatchVersions { get; set; } = [];
     public string? Mode { get; set; }
     public int TotalMatches { get; set; }
     public List<BalanceMetricItemDto> Units { get; set; } = [];

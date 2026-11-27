@@ -42,28 +42,44 @@ public class PlayerProfileService : IPlayerProfileService
         var starterWeapons = await _weaponRepository.GetAllByFilterAsync(w => w.GivenAtRegister);
         var starterTrinkets = await _trinketRepository.GetAllByFilterAsync(t => t.GivenAtRegister);
 
+        var ownedWeapons = starterWeapons.Select(w => new OwnedWeapon
+        {
+            OwnedWeaponId = Guid.NewGuid().ToString(),
+            WeaponDefinitionId = w.WeaponId,
+        }).ToList();
+
+        var weaponDefByClass = starterWeapons
+            .GroupBy(w => w.ClassId)
+            .ToDictionary(g => g.Key, g => g.First().WeaponId);
+
         var profile = new PlayerProfile
         {
             PlayerId = playerId,
             Username = username,
             Gems = 1600,
-            OnboardingStage = "PendingChapter0",
-            OwnedUnits = starterUnits.Select(u => new OwnedUnit
+            OnboardingStage = "NeedGacha",
+            OwnedUnits = starterUnits.Select(u =>
             {
-                OwnedUnitId = Guid.NewGuid().ToString(),
-                UnitDefinitionUId = u.UId,
-                Grade = 1,
-                UnlockedClassIds = new List<int>(u.ClassIds),
-                EquippedMovementSkillId = -1,
-                EquippedOwnedWeaponId = string.Empty,
-                EquippedOwnedTrinketId = string.Empty,
-                EquippedClassSkillId = -1,
+                int primaryClass = u.ClassIds.FirstOrDefault();
+                string defaultOwnedWeaponId = string.Empty;
+                if (primaryClass > 0 && weaponDefByClass.TryGetValue(primaryClass, out int wDefId))
+                {
+                    defaultOwnedWeaponId = ownedWeapons.FirstOrDefault(ow => ow.WeaponDefinitionId == wDefId)?.OwnedWeaponId ?? string.Empty;
+                }
+
+                return new OwnedUnit
+                {
+                    OwnedUnitId = Guid.NewGuid().ToString(),
+                    UnitDefinitionUId = u.UId,
+                    Grade = 1,
+                    UnlockedClassIds = new List<int>(u.ClassIds),
+                    EquippedMovementSkillId = primaryClass > 0 ? 1000 + primaryClass : -1,
+                    EquippedOwnedWeaponId = defaultOwnedWeaponId,
+                    EquippedOwnedTrinketId = string.Empty,
+                    EquippedClassSkillId = primaryClass > 0 ? 3000 + primaryClass : -1,
+                };
             }).ToList(),
-            OwnedWeapons = starterWeapons.Select(w => new OwnedWeapon
-            {
-                OwnedWeaponId = Guid.NewGuid().ToString(),
-                WeaponDefinitionId = w.WeaponId,
-            }).ToList(),
+            OwnedWeapons = ownedWeapons,
             OwnedTrinkets = starterTrinkets.Select(t => new OwnedTrinket
             {
                 OwnedTrinketId = Guid.NewGuid().ToString(),
@@ -396,17 +412,17 @@ public class PlayerProfileService : IPlayerProfileService
                     owned.UnlockedClassIds.Add(reward.ClassId);
                     return (false, 0);
                 }
-                // Brand new unit
+                // Brand new unit — pre-equip its class movement & class skill so it is immediately playable
                 profile.OwnedUnits.Add(new OwnedUnit
                 {
                     OwnedUnitId = Guid.NewGuid().ToString(),
                     UnitDefinitionUId = reward.DefinitionId,
                     Grade = 1,
                     UnlockedClassIds = [reward.ClassId],
-                    EquippedMovementSkillId = -1,
+                    EquippedMovementSkillId = reward.ClassId > 0 ? 1000 + reward.ClassId : -1,
                     EquippedOwnedWeaponId = string.Empty,
                     EquippedOwnedTrinketId = string.Empty,
-                    EquippedClassSkillId = -1,
+                    EquippedClassSkillId = reward.ClassId > 0 ? 3000 + reward.ClassId : -1,
                 });
                 return (false, 0);
 

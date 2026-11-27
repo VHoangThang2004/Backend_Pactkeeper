@@ -69,8 +69,8 @@ public class GachaService(
         if (isTutorialFixedPull)
         {
             // Deterministic 10-item onboarding pull using valid SeedData IDs:
-            // 1 new Tier-3 Unit (Druid), 5 Tier-2 class Weapons (+stats for all 5 starter classes),
-            // 3 Tier-2 Trinkets (+stats), and 1 Tier-1 Trinket (High Heels).
+            // 1 new Tier-3 Unit (Druid), 6 Tier-2 class Weapons (+stats for all 6 classes including Druid),
+            // and 3 Tier-2 Trinkets (+stats).
             var fixedTutorialRewards = new (Reward Reward, int Tier)[]
             {
                 (new Reward { Type = RewardType.Unit,    DefinitionId = 6,  ClassId = 6, Amount = 1 }, 3), // Druid
@@ -79,10 +79,10 @@ public class GachaService(
                 (new Reward { Type = RewardType.Weapon,  DefinitionId = 9,  Amount = 1 }, 2), // War Axe (Warrior +1 HP)
                 (new Reward { Type = RewardType.Weapon,  DefinitionId = 10, Amount = 1 }, 2), // Compound Bow (Archer +5 Spd)
                 (new Reward { Type = RewardType.Weapon,  DefinitionId = 11, Amount = 1 }, 2), // Sacred Tome (Physician +1 SP)
+                (new Reward { Type = RewardType.Weapon,  DefinitionId = 12, Amount = 1 }, 2), // Ancient Staff (Druid +1 HP)
                 (new Reward { Type = RewardType.Trinket, DefinitionId = 5,  Amount = 1 }, 2), // Steel Heels (+5 Spd)
                 (new Reward { Type = RewardType.Trinket, DefinitionId = 6,  Amount = 1 }, 2), // Jeweled Monocle (+1 SP)
                 (new Reward { Type = RewardType.Trinket, DefinitionId = 7,  Amount = 1 }, 2), // Iron Boots (+1 HP)
-                (new Reward { Type = RewardType.Trinket, DefinitionId = 1,  Amount = 1 }, 1), // High Heels
             };
 
             foreach (var (reward, tier) in fixedTutorialRewards)

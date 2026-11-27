@@ -28,12 +28,23 @@ public class StoryProgressService : IStoryProgressService
             return;
 
         var profile = await _profileService.GetByFilterAsync(p => p.PlayerId == playerId);
-        if (profile != null && profile.OnboardingStage == "PendingChapter0")
+        if (profile != null && profile.OnboardingStage != "Completed")
         {
-            // Safeguard against softlock: guarantee enough gems for the 1,500-gem tutorial 10-pull
+            profile.OnboardingStage = "Completed";
+            await _profileService.UpdateAsync(profile.Id, profile);
+        }
+    }
+
+    private async Task EnsureGachaReadyForC0S4Async(string playerId, int chapterId, int nextSceneId)
+    {
+        if (chapterId != 0 || nextSceneId != 4)
+            return;
+
+        var profile = await _profileService.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile != null && (profile.OnboardingStage == "PendingChapter0" || profile.OnboardingStage == "NeedGacha"))
+        {
             if (profile.Gems < 1500)
                 profile.Gems = 1600;
-
             profile.OnboardingStage = "NeedGacha";
             await _profileService.UpdateAsync(profile.Id, profile);
         }
@@ -203,6 +214,7 @@ public class StoryProgressService : IStoryProgressService
         current.IsCompleted = false;
         current.IsChapterCompleted = false;
         await _repository.UpdateAsync(current.Id, current);
+        await EnsureGachaReadyForC0S4Async(playerId, current.ChapterId, current.SceneId);
         return new AdvanceResult(current, nextScene, true);
     }
 

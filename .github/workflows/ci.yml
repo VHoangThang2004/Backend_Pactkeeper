@@ -1,0 +1,177 @@
+name: CI/CD — Safe Drain, Stop, Deploy & Start Backend on VPS
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout source code
+        uses: actions/checkout@v4
+
+      - name: 2. Setup .NET 9.0 on GitHub Cloud (Save 100% VPS RAM)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: 3. Publish Linux x64 Self-Contained on GitHub Cloud
+        run: |
+          dotnet restore GameInventoryApi.csproj
+          dotnet publish GameInventoryApi.csproj -c Release -r linux-x64 --self-contained true -o ./publish
+          rm -f ./publish/appsettings.Production.json
+
+      - name: 4. Pre-Deploy on VPS — Check Status, Trigger 3 Admin Emergency Overrides & Stop Service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            VPS_PASS='${{ secrets.VPS_PASSWORD }}'
+
+            run_sudo() {
+              if [ -n "$VPS_PASS" ]; then
+                echo "$VPS_PASS" | sudo -S -p '' "$@"
+              else
+                sudo "$@"
+              fi
+            }
+
+            echo "=== [Step 4.1] Sync git repo ~/pactkeeper-backend (if present) ==="
+            if [ -d "$HOME/pactkeeper-backend/.git" ]; then
+              cd "$HOME/pactkeeper-backend"
+              git pull origin main || true
+            fi
+
+            echo "=== [Step 4.2] Check status of pactkeeper-backend before deploy ==="
+            run_sudo systemctl status pactkeeper-backend --no-pager || true
+
+            echo "=== [Step 4.3] Trigger 3 Admin Emergency Overrides (Block Login, Pause Queue, Force Stop Matches) ==="
+            ADMIN_USER="${{ secrets.ADMIN_USERNAME }}"
+            ADMIN_USER="${ADMIN_USER:-admin}"
+            ADMIN_PASS="${{ secrets.ADMIN_PASSWORD }}"
+
+            TOKEN=""
+            if [ -n "$ADMIN_PASS" ]; then
+              LOGIN_JSON=$(curl -s -X POST http://localhost:5276/api/auth/login \
+                -H "Content-Type: application/json" \
+                -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}" || true)
+              TOKEN=$(echo "$LOGIN_JSON" | grep -oi '"token"[[:space:]]*:[[:space:]]*"[^"]*' | cut -d'"' -f4 || true)
+            fi
+
+            if [ -n "$TOKEN" ]; then
+              echo "-> Authenticated as Admin. Blocking Player Authentication..."
+              curl -s -X POST http://localhost:5276/api/admin/update-login-status \
+                -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "true" || true
+              echo ""
+
+              echo "-> Pausing PvP Match Queue..."
+              curl -s -X POST http://localhost:5276/api/admin/update-queue-status \
+                -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "true" || true
+              echo ""
+
+              echo "-> Force Stopping all active matches and clearing queue..."
+              curl -s -X POST http://localhost:5276/api/admin/force-stop-all \
+                -H "Authorization: Bearer $TOKEN" || true
+              echo ""
+            else
+              echo "-> Backend not reachable or Admin token skipped; proceeding to OS-level cleanup."
+            fi
+
+            echo "=== [Step 4.4] Stop pactkeeper-backend & clean up any leftover headless match processes ==="
+            run_sudo systemctl stop pactkeeper-backend || true
+            pkill -f "[S]RPG_SERVER" || true
+            sleep 2
+            mkdir -p "$HOME/srpg-release"
+
+      - name: 5. Upload Pre-Compiled Release Binaries to VPS Release Directory
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "publish/*"
+          target: "/home/${{ secrets.VPS_USER }}/srpg-release"
+          strip_components: 1
+
+      - name: 6. Post-Deploy on VPS — Start Service, Verify Status & Resume Login/Queue
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            VPS_PASS='${{ secrets.VPS_PASSWORD }}'
+
+            run_sudo() {
+              if [ -n "$VPS_PASS" ]; then
+                echo "$VPS_PASS" | sudo -S -p '' "$@"
+              else
+                sudo "$@"
+              fi
+            }
+
+            chmod +x "$HOME/srpg-release/GameInventoryApi"
+
+            echo "=== [Step 6.1] Start pactkeeper-backend ==="
+            run_sudo systemctl start pactkeeper-backend
+
+            echo "=== [Step 6.2] Wait for Kestrel (port 5276) to finish MongoDB startup & listen ==="
+            READY=0
+            for i in $(seq 1 15); do
+              if curl -sSf http://localhost:5276/swagger/index.html > /dev/null 2>&1; then
+                echo "-> Port 5276 is UP and ready (after $((i * 2))s)!"
+                READY=1
+                break
+              fi
+              sleep 2
+            done
+
+            echo "=== [Step 6.3] Check status of pactkeeper-backend ==="
+            run_sudo systemctl status pactkeeper-backend --no-pager
+
+            if [ "$READY" -ne 1 ]; then
+              echo "ERROR: Backend service started, but port 5276 did not respond within 30s."
+              exit 1
+            fi
+
+            echo "=== [Step 6.4] Confirm Player Authentication & PvP Match Queue are Active (Unblocked) ==="
+            ADMIN_USER="${{ secrets.ADMIN_USERNAME }}"
+            ADMIN_USER="${ADMIN_USER:-admin}"
+            ADMIN_PASS="${{ secrets.ADMIN_PASSWORD }}"
+
+            TOKEN=""
+            if [ -n "$ADMIN_PASS" ]; then
+              LOGIN_JSON=$(curl -s -X POST http://localhost:5276/api/auth/login \
+                -H "Content-Type: application/json" \
+                -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}" || true)
+              TOKEN=$(echo "$LOGIN_JSON" | grep -oi '"token"[[:space:]]*:[[:space:]]*"[^"]*' | cut -d'"' -f4 || true)
+            fi
+
+            if [ -n "$TOKEN" ]; then
+              curl -s -X POST http://localhost:5276/api/admin/update-login-status \
+                -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "false" || true
+              echo ""
+              curl -s -X POST http://localhost:5276/api/admin/update-queue-status \
+                -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "false" || true
+              echo ""
+              echo "-> System State:"
+              curl -s -X GET http://localhost:5276/api/admin/system-state \
+                -H "Authorization: Bearer $TOKEN" || true
+              echo ""
+            fi
+
+            echo "=== [OK] Safe Deploy Completed 100%! ==="
+

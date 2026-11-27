@@ -46,6 +46,8 @@ public class PlayerProfileService : IPlayerProfileService
         {
             PlayerId = playerId,
             Username = username,
+            Gems = 1600,
+            OnboardingStage = "PendingChapter0",
             OwnedUnits = starterUnits.Select(u => new OwnedUnit
             {
                 OwnedUnitId = Guid.NewGuid().ToString(),
@@ -272,6 +274,18 @@ public class PlayerProfileService : IPlayerProfileService
         if (profile == null) return;
         profile.Gems += gems;
         await _repository.UpdateAsync(profile.Id, profile);
+    }
+
+    public async Task<bool> SetOnboardingStageAsync(string playerId, string stage)
+    {
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null) return false;
+        if (profile.OnboardingStage != stage)
+        {
+            profile.OnboardingStage = stage;
+            await _repository.UpdateAsync(profile.Id, profile);
+        }
+        return true;
     }
 
     public async Task GrantItemsAsync(string playerId, List<int> unitDefIds, List<int> weaponDefIds, List<int> trinketDefIds)

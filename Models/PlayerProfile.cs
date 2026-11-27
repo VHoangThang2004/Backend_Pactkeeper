@@ -31,6 +31,11 @@ public class PlayerProfile
     public List<OwnedWeapon> OwnedWeapons { get; set; } = new();
     public List<OwnedTrinket> OwnedTrinkets { get; set; } = new();
     public Dictionary<string, GachaPityState> GachaPityByBanner { get; set; } = new();
+
+    // Post-Chapter 0 guided meta-tutorial state:
+    // "PendingChapter0" | "NeedGacha" | "NeedUnitConfig" | "Completed"
+    // Defaults to "Completed" so existing accounts remain unlocked.
+    public string OnboardingStage { get; set; } = "Completed";
 }
 
 [BsonIgnoreExtraElements]

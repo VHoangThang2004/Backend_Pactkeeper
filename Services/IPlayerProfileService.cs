@@ -23,4 +23,5 @@ public interface IPlayerProfileService
     Task<UnitConfigDto?> GetUnitConfigAsync(string playerId, string ownedUnitId);
     Task AddGemsAsync(string playerId, int gems);
     Task GrantItemsAsync(string playerId, List<int> unitDefIds, List<int> weaponDefIds, List<int> trinketDefIds);
+    Task<bool> SetOnboardingStageAsync(string playerId, string stage);
 }

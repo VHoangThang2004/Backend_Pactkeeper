@@ -25,15 +25,8 @@ public class PlayerProfileController : ControllerBase
 
         if (profile == null)
         {
-            profile = new PlayerProfile
-            {
-                PlayerId = playerId,
-                Username = User.Identity?.Name ?? "Player",
-                Level = 1,
-                Experience = 0,
-                LastLogin = DateTime.UtcNow
-            };
-            await _service.CreateAsync(playerId, profile);
+            await _service.CreateInitialProfileAsync(playerId, User.Identity?.Name ?? "Player");
+            profile = await _service.GetByFilterAsync(p => p.PlayerId == playerId);
         }
 
         return Ok(profile);
@@ -137,5 +130,19 @@ public class PlayerProfileController : ControllerBase
 
         var result = await _service.GetOwnedWeaponsByClassIdsAsync(playerId, dto.ClassIds);
         return Ok(result);
+    }
+
+    // POST /api/playerprofile/onboarding/complete (and /api/player/onboarding/complete)
+    [HttpPost("onboarding/complete")]
+    [HttpPost("/api/player/onboarding/complete")]
+    public async Task<ActionResult> CompleteOnboarding()
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var updated = await _service.SetOnboardingStageAsync(playerId, "Completed");
+        if (!updated) return NotFound("Profile not found.");
+
+        return Ok(new { onboardingStage = "Completed" });
     }
 }

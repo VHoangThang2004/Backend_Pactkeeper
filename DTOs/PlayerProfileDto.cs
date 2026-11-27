@@ -6,5 +6,6 @@ public record PlayerProfileDto(
     string Username,
     int Level,
     int Experience,
-    DateTime LastLogin
+    DateTime LastLogin,
+    string OnboardingStage = "Completed"
 );

@@ -8,15 +8,35 @@ public class StoryProgressService : IStoryProgressService
     private readonly IMongoRepository<StoryProgress> _repository;
     private readonly IChapterConfigService _chapterConfigService;
     private readonly IActionService _actionService;
+    private readonly IPlayerProfileService _profileService;
 
     public StoryProgressService(
         IMongoRepository<StoryProgress> repository,
         IChapterConfigService chapterConfigService,
-        IActionService actionService)
+        IActionService actionService,
+        IPlayerProfileService profileService)
     {
         _repository = repository;
         _chapterConfigService = chapterConfigService;
         _actionService = actionService;
+        _profileService = profileService;
+    }
+
+    private async Task TryAdvanceOnboardingAfterChapter0Async(string playerId, int completedChapterId)
+    {
+        if (completedChapterId != 0)
+            return;
+
+        var profile = await _profileService.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile != null && profile.OnboardingStage == "PendingChapter0")
+        {
+            // Safeguard against softlock: guarantee enough gems for the 1,500-gem tutorial 10-pull
+            if (profile.Gems < 1500)
+                profile.Gems = 1600;
+
+            profile.OnboardingStage = "NeedGacha";
+            await _profileService.UpdateAsync(profile.Id, profile);
+        }
     }
 
     // Entry point on every login.
@@ -123,6 +143,7 @@ public class StoryProgressService : IStoryProgressService
 
             if (nextScene == null)
             {
+                await TryAdvanceOnboardingAfterChapter0Async(playerId, current.ChapterId);
                 await _actionService.LogActionAsync(playerId, "StoryProgress", current.Id, new Dictionary<string, object>
                 {
                     ["chapterId"] = current.ChapterId,
@@ -138,6 +159,8 @@ public class StoryProgressService : IStoryProgressService
         {
             int completedChapterId = current.ChapterId;
             int completedSceneId = current.SceneId;
+
+            await TryAdvanceOnboardingAfterChapter0Async(playerId, completedChapterId);
 
             var nextChapter = await _chapterConfigService.GetByChapterIdAsync(completedChapterId + 1);
             var firstNextChapterScene = nextChapter?.Scenes
@@ -205,6 +228,8 @@ public class StoryProgressService : IStoryProgressService
         {
             int completedChapterId = current.ChapterId;
             int completedSceneId = current.SceneId;
+
+            await TryAdvanceOnboardingAfterChapter0Async(playerId, completedChapterId);
 
             var nextChapter = await _chapterConfigService.GetByChapterIdAsync(completedChapterId + 1);
             var firstNextChapterScene = nextChapter?.Scenes

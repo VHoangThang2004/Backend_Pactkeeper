@@ -44,19 +44,16 @@ public class GachaService(
         if (profile == null)
             return (null, "Player profile not found.");
 
+        bool isTutorialFixedPull = profile.OnboardingStage == "NeedGacha";
+        if (isTutorialFixedPull && pullType != PullType.Ten)
+            return (null, "Please perform a 10x Summon to complete the tutorial.");
+
         // Check gems
         if (profile.Gems < option.Price)
             return (null, $"Not enough gems. Required: {option.Price}, have: {profile.Gems}.");
 
         // Deduct cost upfront
         profile.Gems -= option.Price;
-
-        // Perform draws with hard-pity & 50/50 featured tracking
-        int totalWeight = banner.Items.Sum(i => Math.Max(0, i.Weight));
-        if (totalWeight <= 0)
-        {
-            return (null, "Banner reward pool weights must total more than 0.");
-        }
 
         profile.GachaPityByBanner ??= new Dictionary<string, GachaPityState>();
         if (!profile.GachaPityByBanner.TryGetValue(bannerId, out var pityState))
@@ -65,82 +62,131 @@ public class GachaService(
             profile.GachaPityByBanner[bannerId] = pityState;
         }
 
-        var highTierItems = banner.Items.Where(i => i.IsFeatured || i.RewardTier >= 3).ToList();
-        if (highTierItems.Count == 0)
-        {
-            int maxTier = banner.Items.Max(i => i.RewardTier);
-            highTierItems = banner.Items.Where(i => i.RewardTier == maxTier).ToList();
-        }
-        var featuredItems = banner.Items.Where(i => i.IsFeatured).ToList();
-        var nonFeaturedHighTier = highTierItems.Where(i => !i.IsFeatured).ToList();
-
         var results = new List<GachaPullResultItemDto>();
         var itemsWon = new List<GachaResultItem>();
         int rarestTier = 0;
 
-        for (int i = 0; i < PullCount(pullType); i++)
+        if (isTutorialFixedPull)
         {
-            pityState.PullsSinceRare++;
-
-            BannerItem item;
-            bool pityTriggered = banner.PityThreshold is int threshold
-                && threshold > 0
-                && pityState.PullsSinceRare >= threshold
-                && highTierItems.Count > 0;
-
-            if (pityTriggered)
+            // Deterministic 10-item onboarding pull using valid SeedData IDs:
+            // 1 new Tier-3 Unit (Druid), 5 Tier-2 class Weapons (+stats for all 5 starter classes),
+            // 3 Tier-2 Trinkets (+stats), and 1 Tier-1 Trinket (High Heels).
+            var fixedTutorialRewards = new (Reward Reward, int Tier)[]
             {
-                if (featuredItems.Count > 0)
+                (new Reward { Type = RewardType.Unit,    DefinitionId = 6,  ClassId = 6, Amount = 1 }, 3), // Druid
+                (new Reward { Type = RewardType.Weapon,  DefinitionId = 7,  Amount = 1 }, 2), // Sharp Dagger (Assassin +5 Spd)
+                (new Reward { Type = RewardType.Weapon,  DefinitionId = 8,  Amount = 1 }, 2), // Kite Shield (Tank +1 HP)
+                (new Reward { Type = RewardType.Weapon,  DefinitionId = 9,  Amount = 1 }, 2), // War Axe (Warrior +1 HP)
+                (new Reward { Type = RewardType.Weapon,  DefinitionId = 10, Amount = 1 }, 2), // Compound Bow (Archer +5 Spd)
+                (new Reward { Type = RewardType.Weapon,  DefinitionId = 11, Amount = 1 }, 2), // Sacred Tome (Physician +1 SP)
+                (new Reward { Type = RewardType.Trinket, DefinitionId = 5,  Amount = 1 }, 2), // Steel Heels (+5 Spd)
+                (new Reward { Type = RewardType.Trinket, DefinitionId = 6,  Amount = 1 }, 2), // Jeweled Monocle (+1 SP)
+                (new Reward { Type = RewardType.Trinket, DefinitionId = 7,  Amount = 1 }, 2), // Iron Boots (+1 HP)
+                (new Reward { Type = RewardType.Trinket, DefinitionId = 1,  Amount = 1 }, 1), // High Heels
+            };
+
+            foreach (var (reward, tier) in fixedTutorialRewards)
+            {
+                var (isDuplicate, compensationGems) = PlayerProfileService.ApplyReward(profile, reward, tier);
+                results.Add(new GachaPullResultItemDto(
+                    new RewardDto(reward.Type, reward.DefinitionId, reward.ClassId, reward.Amount),
+                    isDuplicate,
+                    compensationGems));
+                itemsWon.Add(new GachaResultItem
                 {
-                    if (pityState.GuaranteedFeatured || nonFeaturedHighTier.Count == 0)
+                    Reward = reward,
+                    RewardTier = tier,
+                    IsDuplicate = isDuplicate,
+                    CompensationGems = compensationGems
+                });
+                if (tier > rarestTier) rarestTier = tier;
+            }
+
+            pityState.PullsSinceRare = 0;
+            profile.OnboardingStage = "NeedUnitConfig";
+        }
+        else
+        {
+            // Perform draws with hard-pity & 50/50 featured tracking
+            int totalWeight = banner.Items.Sum(i => Math.Max(0, i.Weight));
+            if (totalWeight <= 0)
+            {
+                return (null, "Banner reward pool weights must total more than 0.");
+            }
+
+            var highTierItems = banner.Items.Where(i => i.IsFeatured || i.RewardTier >= 3).ToList();
+            if (highTierItems.Count == 0)
+            {
+                int maxTier = banner.Items.Max(i => i.RewardTier);
+                highTierItems = banner.Items.Where(i => i.RewardTier == maxTier).ToList();
+            }
+            var featuredItems = banner.Items.Where(i => i.IsFeatured).ToList();
+            var nonFeaturedHighTier = highTierItems.Where(i => !i.IsFeatured).ToList();
+
+            for (int i = 0; i < PullCount(pullType); i++)
+            {
+                pityState.PullsSinceRare++;
+
+                BannerItem item;
+                bool pityTriggered = banner.PityThreshold is int threshold
+                    && threshold > 0
+                    && pityState.PullsSinceRare >= threshold
+                    && highTierItems.Count > 0;
+
+                if (pityTriggered)
+                {
+                    if (featuredItems.Count > 0)
                     {
-                        item = DrawWeightedItem(featuredItems);
-                        pityState.GuaranteedFeatured = false;
-                    }
-                    else if (Random.Shared.Next(2) == 0)
-                    {
-                        item = DrawWeightedItem(featuredItems);
-                        pityState.GuaranteedFeatured = false;
+                        if (pityState.GuaranteedFeatured || nonFeaturedHighTier.Count == 0)
+                        {
+                            item = DrawWeightedItem(featuredItems);
+                            pityState.GuaranteedFeatured = false;
+                        }
+                        else if (Random.Shared.Next(2) == 0)
+                        {
+                            item = DrawWeightedItem(featuredItems);
+                            pityState.GuaranteedFeatured = false;
+                        }
+                        else
+                        {
+                            item = DrawWeightedItem(nonFeaturedHighTier);
+                            pityState.GuaranteedFeatured = true;
+                        }
                     }
                     else
                     {
-                        item = DrawWeightedItem(nonFeaturedHighTier);
-                        pityState.GuaranteedFeatured = true;
+                        item = DrawWeightedItem(highTierItems);
                     }
+
+                    pityState.PullsSinceRare = 0;
                 }
                 else
                 {
-                    item = DrawWeightedItem(highTierItems);
-                }
-
-                pityState.PullsSinceRare = 0;
-            }
-            else
-            {
-                item = DrawWeightedItem(banner.Items);
-                if (item.IsFeatured || item.RewardTier >= 3)
-                {
-                    pityState.PullsSinceRare = 0;
-                    if (featuredItems.Count > 0)
+                    item = DrawWeightedItem(banner.Items);
+                    if (item.IsFeatured || item.RewardTier >= 3)
                     {
-                        pityState.GuaranteedFeatured = !item.IsFeatured;
+                        pityState.PullsSinceRare = 0;
+                        if (featuredItems.Count > 0)
+                        {
+                            pityState.GuaranteedFeatured = !item.IsFeatured;
+                        }
                     }
                 }
-            }
 
-            var (isDuplicate, compensationGems) = PlayerProfileService.ApplyReward(profile, item.Reward, item.RewardTier);
-            results.Add(new GachaPullResultItemDto(
-                new RewardDto(item.Reward.Type, item.Reward.DefinitionId, item.Reward.ClassId, item.Reward.Amount),
-                isDuplicate,
-                compensationGems));
-            itemsWon.Add(new GachaResultItem
-            {
-                Reward = item.Reward,
-                RewardTier = item.RewardTier,
-                IsDuplicate = isDuplicate,
-                CompensationGems = compensationGems
-            });
-            if (item.RewardTier > rarestTier) rarestTier = item.RewardTier;
+                var (isDuplicate, compensationGems) = PlayerProfileService.ApplyReward(profile, item.Reward, item.RewardTier);
+                results.Add(new GachaPullResultItemDto(
+                    new RewardDto(item.Reward.Type, item.Reward.DefinitionId, item.Reward.ClassId, item.Reward.Amount),
+                    isDuplicate,
+                    compensationGems));
+                itemsWon.Add(new GachaResultItem
+                {
+                    Reward = item.Reward,
+                    RewardTier = item.RewardTier,
+                    IsDuplicate = isDuplicate,
+                    CompensationGems = compensationGems
+                });
+                if (item.RewardTier > rarestTier) rarestTier = item.RewardTier;
+            }
         }
 
         // Persist updated profile (gems already modified in-place by ApplyReward)

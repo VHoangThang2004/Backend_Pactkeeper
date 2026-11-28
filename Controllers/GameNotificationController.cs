@@ -1,4 +1,7 @@
+using System.Globalization;
 using System.Security.Claims;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using GameInventoryApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -102,10 +105,53 @@ public record GameNotificationDto(
     DateTime CreatedAt
 );
 
-public record CreateGameNotificationRequestDto(
-    string? PlayerId,
-    string Type,
-    string Title,
-    string Message,
-    DateTime? ExpiresAt
-);
+public class CreateGameNotificationRequestDto
+{
+    public string? PlayerId { get; set; }
+    public string Type { get; set; } = "System";
+    public string Title { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+
+    [JsonConverter(typeof(FlexibleNullableDateTimeConverter))]
+    public DateTime? ExpiresAt { get; set; }
+}
+
+/// <summary>
+/// Parses nullable UTC timestamps flexibly (treats blank strings as null, accepts space separators
+/// and offsets without colons) and emits an actionable error message on invalid calendar dates.
+/// </summary>
+public sealed class FlexibleNullableDateTimeConverter : JsonConverter<DateTime?>
+{
+    public override DateTime? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+            return null;
+
+        if (reader.TokenType != JsonTokenType.String)
+            throw new JsonException("expiresAt must be an ISO-8601 date/time string or null.");
+
+        var raw = reader.GetString();
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        if (DateTimeOffset.TryParse(
+                raw.Trim(),
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
+        {
+            return parsed.UtcDateTime;
+        }
+
+        throw new JsonException(
+            $"Invalid expiresAt value '{raw}'. Use a valid ISO-8601 date/time (e.g. '2026-12-01T12:00:00Z') or null.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)
+    {
+        if (value.HasValue)
+            writer.WriteStringValue(value.Value);
+        else
+            writer.WriteNullValue();
+    }
+}

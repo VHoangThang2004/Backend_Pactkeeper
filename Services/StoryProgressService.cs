@@ -35,19 +35,34 @@ public class StoryProgressService : IStoryProgressService
         }
     }
 
-    private async Task EnsureGachaReadyForC0S4Async(string playerId, int chapterId, int nextSceneId)
+    private async Task EnsureGachaReadyForC0S4Async(string playerId, StoryProgress progress)
     {
-        if (chapterId != 0 || nextSceneId != 4)
+        if (progress == null || progress.ChapterId != 0 || progress.SceneId != 4 || progress.IsCompleted)
             return;
 
         var profile = await _profileService.GetByFilterAsync(p => p.PlayerId == playerId);
-        if (profile != null && (profile.OnboardingStage == "PendingChapter0" || profile.OnboardingStage == "NeedGacha"))
+        if (profile == null)
+            return;
+
+        // If the player has already completed the fixed 10x tutorial pull during this C0_S4 run,
+        // GachaService has transitioned OnboardingStage -> "NeedUnitConfig"; do not re-seed or re-arm.
+        if (profile.OnboardingStage == "NeedUnitConfig")
+            return;
+
+        bool changed = false;
+        if (profile.Gems < 1500)
         {
-            if (profile.Gems < 1500)
-                profile.Gems = 1600;
-            profile.OnboardingStage = "NeedGacha";
-            await _profileService.UpdateAsync(profile.Id, profile);
+            profile.Gems = 1600;
+            changed = true;
         }
+        if (profile.OnboardingStage != "NeedGacha")
+        {
+            profile.OnboardingStage = "NeedGacha";
+            changed = true;
+        }
+
+        if (changed)
+            await _profileService.UpdateAsync(profile.Id, profile);
     }
 
     // Entry point on every login.
@@ -93,6 +108,7 @@ public class StoryProgressService : IStoryProgressService
                 }
             }
 
+            await EnsureGachaReadyForC0S4Async(playerId, current);
             return current;
         }
 
@@ -214,7 +230,7 @@ public class StoryProgressService : IStoryProgressService
         current.IsCompleted = false;
         current.IsChapterCompleted = false;
         await _repository.UpdateAsync(current.Id, current);
-        await EnsureGachaReadyForC0S4Async(playerId, current.ChapterId, current.SceneId);
+        await EnsureGachaReadyForC0S4Async(playerId, current);
         return new AdvanceResult(current, nextScene, true);
     }
 
@@ -275,6 +291,7 @@ public class StoryProgressService : IStoryProgressService
                 });
             }
 
+            await EnsureGachaReadyForC0S4Async(playerId, current);
             return current;
         }
 
@@ -284,6 +301,7 @@ public class StoryProgressService : IStoryProgressService
         current.IsChapterCompleted = false;
         current.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateAsync(current.Id, current);
+        await EnsureGachaReadyForC0S4Async(playerId, current);
         return current;
     }
 
@@ -353,6 +371,7 @@ public class StoryProgressService : IStoryProgressService
             await _repository.UpdateAsync(current.Id, current);
         }
 
+        await EnsureGachaReadyForC0S4Async(playerId, current);
         return (current, null);
     }
 }

@@ -1,6 +1,9 @@
 namespace GameInventoryApi.DTOs;
 
 public record UpdateSkillDto(int SkillId);
+public record UpdateAvatarDto(int AvatarId);
+public record PlayerAvatarDto(string PlayerId, int AvatarId);
+public record UpdateSignatureDto(string? Signature);
 
 public record UpdateUnitWeaponDto(string? OwnedWeaponId);
 

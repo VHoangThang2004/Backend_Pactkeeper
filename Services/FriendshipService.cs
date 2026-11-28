@@ -81,11 +81,13 @@ public class FriendshipService : IFriendshipService
         {
             string username = "Unknown";
             int level = 1;
+            string signature = string.Empty;
 
             if (profileMap.TryGetValue(id, out var profile))
             {
                 username = profile.Username;
                 level = profile.Level;
+                signature = profile.Signature ?? string.Empty;
             }
             else if (userMap.TryGetValue(id, out var user))
             {
@@ -100,7 +102,8 @@ public class FriendshipService : IFriendshipService
                 username,
                 level,
                 isOnline,
-                status
+                status,
+                signature
             ));
         }
 

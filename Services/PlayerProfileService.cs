@@ -292,6 +292,35 @@ public class PlayerProfileService : IPlayerProfileService
         await _repository.UpdateAsync(profile.Id, profile);
     }
 
+    public async Task<(bool Success, string? Error)> SetAvatarAsync(string playerId, int avatarId)
+    {
+        if (avatarId < 0)
+            return (false, "Invalid avatar.");
+
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null)
+            return (false, "Profile not found.");
+
+        profile.AvatarId = avatarId;
+        await _repository.UpdateAsync(profile.Id, profile);
+        return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> SetSignatureAsync(string playerId, string? signature)
+    {
+        var text = (signature ?? string.Empty).Trim();
+        if (text.Length > 120)
+            text = text.Substring(0, 120);
+
+        var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null)
+            return (false, "Profile not found.");
+
+        profile.Signature = text;
+        await _repository.UpdateAsync(profile.Id, profile);
+        return (true, null);
+    }
+
     public async Task<bool> SetOnboardingStageAsync(string playerId, string stage)
     {
         var profile = await _repository.GetByFilterAsync(p => p.PlayerId == playerId);

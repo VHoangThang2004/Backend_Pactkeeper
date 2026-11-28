@@ -32,6 +32,39 @@ public class PlayerProfileController : ControllerBase
         return Ok(profile);
     }
 
+    [HttpPatch("avatar")]
+    public async Task<ActionResult> UpdateAvatar([FromBody] UpdateAvatarDto dto)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var (success, error) = await _service.SetAvatarAsync(playerId, dto.AvatarId);
+        return success ? NoContent() : BadRequest(error);
+    }
+
+    [HttpGet("avatar/{playerId}")]
+    public async Task<ActionResult<PlayerAvatarDto>> GetAvatar(string playerId)
+    {
+        if (string.IsNullOrWhiteSpace(playerId))
+            return BadRequest("Player id is required.");
+
+        var profile = await _service.GetByFilterAsync(p => p.PlayerId == playerId);
+        if (profile == null)
+            return NotFound();
+
+        return Ok(new PlayerAvatarDto(profile.PlayerId, profile.AvatarId));
+    }
+
+    [HttpPatch("signature")]
+    public async Task<ActionResult> UpdateSignature([FromBody] UpdateSignatureDto dto)
+    {
+        var playerId = User.FindFirst("PlayerId")?.Value;
+        if (playerId == null) return Unauthorized();
+
+        var (success, error) = await _service.SetSignatureAsync(playerId, dto.Signature);
+        return success ? NoContent() : BadRequest(error);
+    }
+
     // GET /api/playerprofile/units
     [HttpGet("units")]
     public async Task<ActionResult<List<UnitConfigDto>>> GetMyUnits()

@@ -20,6 +20,8 @@ public class PlayerProfile
     public int RankTier { get; set; } = 0;
     public int RankWins { get; set; } = 0;
     public int RankLosses { get; set; } = 0;
+    public int AvatarId { get; set; } = 0;
+    public string Signature { get; set; } = string.Empty;
     public DateTime LastLogin { get; set; } = DateTime.UtcNow;
 
     public bool IsBanned { get; set; } = false;

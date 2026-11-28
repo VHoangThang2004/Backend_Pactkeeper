@@ -5,7 +5,8 @@ public record FriendProfileDto(
     string Username,
     int Level,
     bool IsOnline,
-    string Status = "idle" // "idle", "in_match", "offline"
+    string Status = "idle", // "idle", "in_match", "offline"
+    string Signature = ""
 );
 
 public record FriendRequestDto(

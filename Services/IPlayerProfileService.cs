@@ -24,4 +24,6 @@ public interface IPlayerProfileService
     Task AddGemsAsync(string playerId, int gems);
     Task GrantItemsAsync(string playerId, List<int> unitDefIds, List<int> weaponDefIds, List<int> trinketDefIds);
     Task<bool> SetOnboardingStageAsync(string playerId, string stage);
+    Task<(bool Success, string? Error)> SetAvatarAsync(string playerId, int avatarId);
+    Task<(bool Success, string? Error)> SetSignatureAsync(string playerId, string? signature);
 }
